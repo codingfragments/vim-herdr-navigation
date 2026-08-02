@@ -23,7 +23,9 @@ local function nav(wincmd, dir)
     if herdr == nil or herdr == "" then
       herdr = "herdr"
     end
-    vim.fn.system({ herdr, "pane", "focus", "--direction", dir, "--current" })
+    -- Target this pane explicitly: `--current` resolves to the server's
+    -- globally focused pane, which is not necessarily the one we are in.
+    vim.fn.system({ herdr, "pane", "focus", "--direction", dir, "--pane", vim.env.HERDR_PANE_ID })
   elseif vim.env.TMUX and vim.env.TMUX ~= "" then
     local tmux = { left = "Left", down = "Down", up = "Up", right = "Right" }
     pcall(vim.cmd, "TmuxNavigate" .. tmux[dir])

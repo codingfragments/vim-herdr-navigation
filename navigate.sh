@@ -38,7 +38,7 @@ passthrough_re="${HERDR_NAV_PASSTHROUGH_RE:-}"
 
 forward=0
 if [ -n "$pane" ] && command -v jq >/dev/null 2>&1; then
-  if "$herdr" pane process-info --current 2>/dev/null \
+  if "$herdr" pane process-info --pane "$pane" 2>/dev/null \
     | jq -e --arg vim "$vim_re" --arg pass "$passthrough_re" \
         '.result.process_info.foreground_processes[]?.name
          | ascii_downcase
@@ -49,6 +49,9 @@ fi
 
 if [ "$forward" -eq 1 ]; then
   exec "$herdr" pane send-keys "$pane" "$key"
+elif [ -n "$pane" ]; then
+  exec "$herdr" pane focus --direction "$dir" --pane "$pane"
 else
+  # Invoked outside a pane (no $HERDR_PANE_ID): fall back to global focus.
   exec "$herdr" pane focus --direction "$dir" --current
 fi
