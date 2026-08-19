@@ -14,8 +14,13 @@ Two cooperating sides, like `vim-tmux-navigator`:
 - **herdr side** (`navigate.sh`): a herdr keybind binds `Ctrl+h/j/k/l` to a
   plugin action. On each press the action checks the focused pane's _foreground_
   process via `herdr pane process-info`. If it's Vim/Neovim it forwards the key
-  into that pane with `herdr pane send-keys`; otherwise it moves herdr's focus
-  with `herdr pane focus --direction`.
+  into that pane with `herdr pane send-keys`; otherwise it moves herdr's focus.
+  Focus is **smart**: rather than a single directional hop, the target pane is
+  chosen from the tab's geometry using a per-tab preferred coordinate so that
+  crossing into a stacked column lands on the row you were last in — not always
+  the top pane. The focus itself is a single `pane.focus` call over herdr's
+  socket (focus-by-id), so there's no intermediate render of the pane in
+  between. See [Smart focus](#smart-focus) below.
 - **editor side** (`editor/nvim.lua`, `editor/vim.vim`): maps the same keys to
   `wincmd h/j/k/l`. If the window didn't change (Vim is at an edge), it calls
   `herdr pane focus --direction` to cross into the neighbouring herdr pane. Vim
@@ -24,8 +29,11 @@ Two cooperating sides, like `vim-tmux-navigator`:
 ## Requirements
 
 - herdr `>= 0.7.0`
-- `jq` (used by `navigate.sh` to detect Vim; without it the keys still move
-  herdr panes, just without Vim awareness)
+- `jq` (used by `navigate.sh` to detect Vim and to compute smart focus; without
+  it the keys still move herdr panes, just without Vim awareness or the smart
+  target selection)
+- `python3` (used for the single-call focus-by-id over the herdr socket; if
+  absent, `navigate.sh` falls back to a two-hop directional walk)
 - Tested on Linux or macOS
 
 ## Install
@@ -123,5 +131,42 @@ or, simply copy and pasta.
   the kitty keyboard protocol is active. Neovim ≥ 0.10 enables it automatically
   in herdr panes, keeping `<C-h>` distinct. On older Vim you may need to map
   `<BS>` separately if it starts navigating.
+## Smart focus
+
+When you move between herdr panes (the non-Vim path), `navigate.sh` doesn't just
+hop one pane in the requested direction. It reads the tab layout, finds the
+panes beyond you in that direction, and picks the one whose row (for left/right)
+or column (for up/down) matches the one you were last in — a per-tab preferred
+coordinate.
+
+```
+  ┌───────────┬───────────┐
+  │           │     B     │   move A -> right  ->  lands on C (not B),
+  │     A     ├───────────┤   because you were last in C's row
+  │           │     C     │
+  └───────────┴───────────┘
+```
+
+A horizontal move updates the preferred _column_ and keeps the preferred _row_;
+a vertical move does the mirror. So the row/column you're conceptually on
+survives a move on the other axis, and crossing back returns you to the pane you
+left rather than always the top-most one.
+
+State is stored per tab under
+`${XDG_STATE_HOME:-~/.local/state}/vim-herdr-navigation/<tab_id>.json`
+(overridable via `HERDR_NAV_STATE_DIR`). `tab_id` already embeds the workspace,
+so state is isolated per tab _and_ per workspace. Delete the directory and the
+preference simply re-seeds from the current pane on the next move.
+
+The focus itself is a single `pane.focus { pane_id }` call over herdr's unix
+socket (`$HERDR_SOCKET_PATH`, injected by herdr into every pane) — focus-by-id,
+which the CLI doesn't expose for terminal panes. One call means no intermediate
+render of the pane in between, so no flicker. If `python3` or the socket is
+unavailable, `navigate.sh` falls back to a two-hop directional walk
+(`pane focus --direction` twice), which may briefly render the intermediate
+pane.
+
+## Notes & tradeoffs
+
 - The editor maps are normal-mode only. Add `t`/`i` modes yourself if you want
   to navigate out of terminal/insert mode.

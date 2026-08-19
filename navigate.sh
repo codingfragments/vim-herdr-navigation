@@ -149,59 +149,98 @@ $(printf '%s' "$candidates_json" | jq -r --arg id "$target" \
   'select(.pane_id == $id) | "\(.cx) \(.cy)"')
 EOF
 
-# Walk to the target: one primary-direction hop into the neighbour column/row,
-# then cross-axis hops until the focused pane is the target (bounded by pane count).
-total_panes="$(printf '%s' "$layout_json" | jq -r '.result.layout.panes | length')"
+# Focus the target pane by id, directly over the herdr socket. The CLI has no
+# focus-by-id for terminal panes (only directional `pane focus` and plugin-only
+# `plugin pane focus`), but the socket API exposes `pane.focus` which takes a
+# PaneTarget {pane_id} and works on any pane. One call, no intermediate render.
+# Falls back to the two-hop directional walk if python3 or the socket is absent.
+focus_by_id() {
+  local sock_path="$1" pid="$2"
+  python3 - "$sock_path" "$pid" <<'PY'
+import sys, json, socket
+sock_path, pane_id = sys.argv[1], sys.argv[2]
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(2)
+    s.connect(sock_path)
+    s.sendall((json.dumps({"id":"nav","method":"pane.focus",
+                          "params":{"pane_id":pane_id}})+"\n").encode())
+    data = b""
+    while b"\n" not in data:
+        chunk = s.recv(4096)
+        if not chunk: break
+        data += chunk
+    s.close()
+    resp = json.loads(data.decode(errors="replace"))
+    sys.exit(0 if "result" in resp and "error" not in resp else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
 
-"$herdr" pane focus --direction "$dir" --pane "$pane" >/dev/null 2>&1 || true
+sock_path="${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}"
+focused_ok=0
+if command -v python3 >/dev/null 2>&1 && [ -S "$sock_path" ]; then
+  if focus_by_id "$sock_path" "$target"; then focused_ok=1; fi
+fi
 
-iter=0
-while [ "$iter" -lt "$total_panes" ]; do
-  iter=$(( iter + 1 ))
-  cur_layout="$("$herdr" pane layout --pane "$pane" 2>/dev/null || true)"
-  [ -z "$cur_layout" ] && break
-  cur_focused="$(printf '%s' "$cur_layout" | jq -r '.result.layout.focused_pane_id // empty')"
-  [ -z "$cur_focused" ] && break
-  [ "$cur_focused" = "$target" ] && break
-
-  sec="$(printf '%s' "$cur_layout" | jq -r \
-    --arg id "$cur_focused" --arg axis "$axis" \
-    --argjson tcx "$target_cx" --argjson tcy "$target_cy" '
-    .result.layout.panes[] | select(.pane_id == $id) | .rect as $r |
-    if $axis == "h"
-    then (if $tcy < ($r.y + $r.height/2) then "up"   else "down"  end)
-    else     (if $tcx < ($r.x + $r.width/2)  then "left" else "right" end) end
-  ')"
-  [ -z "$sec" ] && break
-  "$herdr" pane focus --direction "$sec" --pane "$cur_focused" >/dev/null 2>&1 || break
-done
+if [ "$focused_ok" -eq 0 ]; then
+  # Fallback: two-hop directional walk (may briefly render the intermediate pane).
+  total_panes="$(printf '%s' "$layout_json" | jq -r '.result.layout.panes | length')"
+  "$herdr" pane focus --direction "$dir" --pane "$pane" >/dev/null 2>&1 || true
+  iter=0
+  while [ "$iter" -lt "$total_panes" ]; do
+    iter=$(( iter + 1 ))
+    cur_layout="$("$herdr" pane layout --pane "$pane" 2>/dev/null || true)"
+    [ -z "$cur_layout" ] && break
+    cur_focused="$(printf '%s' "$cur_layout" | jq -r '.result.layout.focused_pane_id // empty')"
+    [ -z "$cur_focused" ] && break
+    [ "$cur_focused" = "$target" ] && break
+    sec="$(printf '%s' "$cur_layout" | jq -r \
+      --arg id "$cur_focused" --arg axis "$axis" \
+      --argjson tcx "$target_cx" --argjson tcy "$target_cy" '
+      .result.layout.panes[] | select(.pane_id == $id) | .rect as $r |
+      if $axis == "h"
+      then (if $tcy < ($r.y + $r.height/2) then "up"   else "down"  end)
+      else     (if $tcx < ($r.x + $r.width/2)  then "left" else "right" end) end
+    ')"
+    [ -z "$sec" ] && break
+    "$herdr" pane focus --direction "$sec" --pane "$cur_focused" >/dev/null 2>&1 || break
+  done
+fi
 
 # Persist both preferred coordinates. Along the moved axis we store the new
 # center; across the axis we preserve the preference we just targeted with
 # (stored value if any, else the source-pane seed) — so the row/column you're
-# conceptually on survives a move on the other axis.
-final_layout="$("$herdr" pane layout --pane "$pane" 2>/dev/null || true)"
-if [ -n "$final_layout" ]; then
-  final_focused="$(printf '%s' "$final_layout" | jq -r '.result.layout.focused_pane_id // empty')"
-  read -r fin_cx fin_cy <<EOF
+# conceptually on survives a move on the other axis. On the socket path we
+# already know the target's center; on the walk path re-read to be safe.
+if [ "$focused_ok" -eq 1 ]; then
+  fin_cx="$target_cx"; fin_cy="$target_cy"
+else
+  final_layout="$("$herdr" pane layout --pane "$pane" 2>/dev/null || true)"
+  fin_cx=""; fin_cy=""
+  if [ -n "$final_layout" ]; then
+    final_focused="$(printf '%s' "$final_layout" | jq -r '.result.layout.focused_pane_id // empty')"
+    read -r fin_cx fin_cy <<EOF
 $(printf '%s' "$final_layout" | jq -r --arg id "$final_focused" \
   '.result.layout.panes[] | select(.pane_id == $id) | .rect | "\(.x + .width/2) \(.y + .height/2)"')
 EOF
-  if [ -n "$fin_cx" ] && [ -n "$fin_cy" ]; then
-    if [ "$axis" = "h" ]; then
-      along_key="preferred_x"; along_val="$fin_cx"; cross_key="preferred_y"; cross_val="$pref_val"
-    else
-      along_key="preferred_y"; along_val="$fin_cy"; cross_key="preferred_x"; cross_val="$pref_val"
-    fi
-    tmp="$state_file.tmp.$$"
-    jq --arg ak "$along_key" --argjson av "$along_val" \
-       --arg ck "$cross_key" --argjson cv "$cross_val" \
-       --arg tab "$tab_id" \
-       '. + {($ak): $av, ($ck): $cv, tab_id: $tab, updated: now}' "$state_file" 2>/dev/null > "$tmp" \
-      || printf '{"%s":%s,"%s":%s,"tab_id":"%s","updated":%s}\n' \
-           "$along_key" "$along_val" "$cross_key" "$cross_val" "$tab_id" "$(date +%s)" > "$tmp"
-    mv -f "$tmp" "$state_file"
   fi
+fi
+if [ -n "$fin_cx" ] && [ -n "$fin_cy" ]; then
+  if [ "$axis" = "h" ]; then
+    along_key="preferred_x"; along_val="$fin_cx"; cross_key="preferred_y"; cross_val="$pref_val"
+  else
+    along_key="preferred_y"; along_val="$fin_cy"; cross_key="preferred_x"; cross_val="$pref_val"
+  fi
+  tmp="$state_file.tmp.$$"
+  jq --arg ak "$along_key" --argjson av "$along_val" \
+     --arg ck "$cross_key" --argjson cv "$cross_val" \
+     --arg tab "$tab_id" \
+     '. + {($ak): $av, ($ck): $cv, tab_id: $tab, updated: now}' "$state_file" 2>/dev/null > "$tmp" \
+    || printf '{"%s":%s,"%s":%s,"tab_id":"%s","updated":%s}\n' \
+         "$along_key" "$along_val" "$cross_key" "$cross_val" "$tab_id" "$(date +%s)" > "$tmp"
+  mv -f "$tmp" "$state_file"
 fi
 
 exit 0
