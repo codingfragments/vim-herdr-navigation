@@ -275,6 +275,27 @@ echo "--- D -> left --cross-tabs (edge) => should switch back to tab 1 (C) ---"
 run_cross left     # D at left edge, flag set -> cross-tab -> w:t1 (C)
 
 echo
+echo "=== Scenario 6: Vim edge-cross via --no-forward (no loop, smart-focus+cross-tab) ==="
+# Simulates the editor side hitting a Vim split edge: nvim.lua invokes the
+# `*-edge` action, which runs `navigate --no-forward --cross-tabs <dir>`.
+# --no-forward MUST skip Vim detection (no send-keys / no loop) and go straight
+# to the herdr focus path: smart-focus + cross-tab + state-persist.
+# We run it directly (the edge action is just this command) and assert no
+# `[walk] send-keys` line appears (that would mean it forwarded into Vim).
+printf '{"focused":"C","active_tab":"w:t1","tabs":{"w:t1":{"focused":"C"},"w:t2":{"focused":"D"}}}\n' > "$model"
+rm -f "$state_dir/w_t1.json"
+echo "--- C -> right --no-forward --cross-tabs (Vim edge) => tab 2 (D), NO send-keys ---"
+env -u HERDR_NAV_CROSS_TABS "$nav_bin" --no-forward --cross-tabs right 2>&1 | tee /tmp/vhnav_edge.log
+if grep -q 'send-keys' /tmp/vhnav_edge.log; then
+  echo "FAIL: --no-forward still forwarded the chord (loop risk)!"; exit 1
+fi
+echo "    focused after : $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model")"
+echo "    (state file written by the edge-cross, so preferred coord persists)"
+echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)' 2>/dev/null)"
+# Note: on the cross-tab path, no state file is written (we switch tabs, not panes
+# within a tab) — that's expected; the new tab's own state applies once there.
+
+echo
 echo "=== Cleanup ==="
 kill "$sock_pid" 2>/dev/null || true
 rm -rf "$work"

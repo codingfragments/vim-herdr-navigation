@@ -73,3 +73,34 @@ id = "right-cross"
 title = "Navigate right, cross tabs at edge (Vim/herdr)"
 contexts = ["global"]
 command = ["./target/release/navigate", "--cross-tabs", "right"]
+
+# --- Edge-cross action set: invoked by the editor side (nvim.lua / vim.vim)
+# when a Vim split hits an edge and wants to cross into herdr. `--no-forward`
+# makes navigate skip Vim detection (it would otherwise forward the chord back
+# into Vim and loop) and go straight to the herdr pane-focus path — so smart
+# focus, cross-tab, and preferred-coordinate persist all run, matching the
+# non-Vim path. Not bound to keys; invoked via `herdr plugin action invoke`.
+
+[[actions]]
+id = "left-edge"
+title = "Cross from Vim edge left into herdr"
+contexts = ["global"]
+command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "left"]
+
+[[actions]]
+id = "down-edge"
+title = "Cross from Vim edge down into herdr"
+contexts = ["global"]
+command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "down"]
+
+[[actions]]
+id = "up-edge"
+title = "Cross from Vim edge up into herdr"
+contexts = ["global"]
+command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "up"]
+
+[[actions]]
+id = "right-edge"
+title = "Cross from Vim edge right into herdr"
+contexts = ["global"]
+command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "right"]
