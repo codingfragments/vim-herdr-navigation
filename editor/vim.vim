@@ -15,7 +15,13 @@ endif
 
 function! s:HerdrFocus(dir) abort
   let l:herdr = empty($HERDR_BIN_PATH) ? 'herdr' : $HERDR_BIN_PATH
-  call system(shellescape(l:herdr) . ' pane focus --direction ' . a:dir . ' --current')
+  " Route through the plugin's `*-edge` action (navigate --no-forward),
+  " NOT `herdr pane focus` directly. That way the edge-cross gets the same
+  " smart-focus target selection, cross-tab navigation, and per-tab
+  " preferred-coordinate persistence as the non-Vim path. `--no-forward`
+  " tells navigate to skip Vim detection (we already know we're in Vim and
+  " at an edge) so it doesn't forward the chord back in and loop.
+  call system(shellescape(l:herdr) . ' plugin action invoke vim-herdr-navigation.' . a:dir . '-edge')
 endfunction
 
 function! s:Navigate(wincmd, dir) abort

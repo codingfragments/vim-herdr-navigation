@@ -28,17 +28,25 @@ use direction::{Axis, Direction};
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        eprintln!("usage: navigate [--cross-tabs] <left|down|up|right>");
+        eprintln!("usage: navigate [--no-forward] [--cross-tabs] <left|down|up|right>");
         exit(2);
     }
-    // `--cross-tabs` opts in to cross-tab navigation at the horizontal edge,
-    // overriding HERDR_NAV_CROSS_TABS. The flag may appear before the direction.
+    // Flags (may appear before the direction):
+    //   --no-forward / -n   skip Vim detection + key forwarding; go straight to
+    //                       the herdr pane-focus path. Used by the editor side
+    //                       when it has already detected a Vim split edge and
+    //                       wants to cross into herdr WITHOUT navigate forwarding
+    //                       the chord back into Vim (which would loop).
+    //   --cross-tabs / -t   opt in to cross-tab navigation at the horizontal
+    //                       edge (overrides HERDR_NAV_CROSS_TABS).
     let mut cross_tabs_override: Option<bool> = None;
+    let mut no_forward = false;
     let mut positional: Vec<&str> = Vec::new();
     for a in &args {
         match a.as_str() {
             "--cross-tabs" | "-t" => cross_tabs_override = Some(true),
             "--no-cross-tabs" => cross_tabs_override = Some(false),
+            "--no-forward" | "-n" => no_forward = true,
             "--" => {
                 // treat the rest as positional
                 continue;
@@ -53,7 +61,7 @@ fn main() {
     let dir_arg = match positional.first() {
         Some(d) => d,
         None => {
-            eprintln!("usage: navigate [--cross-tabs] <left|down|up|right>");
+            eprintln!("usage: navigate [--no-forward] [--cross-tabs] <left|down|up|right>");
             exit(2);
         }
     };
@@ -75,12 +83,16 @@ fn main() {
     let cross_tabs = cross_tabs_override.unwrap_or_else(tabs::env_enabled);
 
     // --- Vim detection + forward -------------------------------------------
+    // Skipped entirely when --no-forward is set (caller is the editor side
+    // crossing a Vim split edge; forwarding the chord back would loop).
     let passthrough_re = std::env::var("HERDR_NAV_PASSTHROUGH_RE").unwrap_or_default();
     let mut forward = false;
-    if let Some(p) = &pane {
-        if let Some(info) = herdr::process_info(&herdr, p) {
-            if vim::is_vim_foreground(&info, &passthrough_re) {
-                forward = true;
+    if !no_forward {
+        if let Some(p) = &pane {
+            if let Some(info) = herdr::process_info(&herdr, p) {
+                if vim::is_vim_foreground(&info, &passthrough_re) {
+                    forward = true;
+                }
             }
         }
     }

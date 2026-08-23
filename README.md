@@ -23,9 +23,15 @@ Two cooperating sides, like `vim-tmux-navigator`:
   intermediate render of the pane in between. See [Smart focus](#smart-focus)
   below.
 - **editor side** (`editor/nvim.lua`, `editor/vim.vim`): maps the same keys to
-  `wincmd h/j/k/l`. If the window didn't change (Vim is at an edge), it calls
-  `herdr pane focus --direction` to cross into the neighbouring herdr pane. Vim
-  finds its own pane through the `$HERDR_PANE_ID` herdr injects into every pane.
+  `wincmd h/j/k/l`. If the window didn't change (Vim is at an edge), it invokes
+  the plugin's `*-edge` action (`herdr plugin action invoke vim-herdr-navigation.<dir>-edge`),
+  which runs `navigate --no-forward --cross-tabs <dir>`. `--no-forward` tells
+  `navigate` to skip Vim detection (it would otherwise forward the chord back
+  into Vim and loop) and go straight to the herdr pane-focus path — so the
+  Vim edge-cross gets the **same** smart-focus target selection, cross-tab
+  navigation, and per-tab preferred-coordinate persistence as the non-Vim path.
+  Vim finds its own pane through the `$HERDR_PANE_ID` herdr injects into every
+  pane.
 
 ## Requirements
 
@@ -172,8 +178,9 @@ or, simply copy and pasta.
   up/down never cross tabs. The `--cross-tabs` flag takes precedence over the
   env var.
 
-  (Only the non-Vim path crosses tabs today. The Vim edge-cross goes through
-  the editor side; wiring that through `navigate` too is a planned follow-up.)
+  (The Vim edge-cross now goes through `navigate` too — see the `*-edge`
+  actions in `herdr-plugin.toml` and the editor side. It uses `--no-forward` so
+  `navigate` doesn't re-forward the chord into Vim and loop.)
 - **`Ctrl+l` / `Ctrl+k` in shells.** Binding these globally shadows readline's
   `Ctrl+L` (clear screen) and `Ctrl+K` (kill line) inside non-Vim panes. This is
   the same tradeoff as `vim-tmux-navigator`. If you want them back, bind clear to

@@ -23,9 +23,14 @@ local function nav(wincmd, dir)
     if herdr == nil or herdr == "" then
       herdr = "herdr"
     end
-    -- Target this pane explicitly: `--current` resolves to the server's
-    -- globally focused pane, which is not necessarily the one we are in.
-    vim.fn.system({ herdr, "pane", "focus", "--direction", dir, "--pane", vim.env.HERDR_PANE_ID })
+    -- Route through the plugin's `*-edge` action (navigate --no-forward),
+    -- NOT `herdr pane focus` directly. That way the edge-cross gets the same
+    -- smart-focus target selection, cross-tab navigation, and per-tab
+    -- preferred-coordinate persistence as the non-Vim path. `--no-forward`
+    -- tells navigate to skip Vim detection (we already know we're in Vim and
+    -- at an edge) so it doesn't forward the chord back in and loop.
+    vim.fn.system({ herdr, "plugin", "action", "invoke",
+                    "vim-herdr-navigation." .. dir .. "-edge" })
   elseif vim.env.TMUX and vim.env.TMUX ~= "" then
     local tmux = { left = "Left", down = "Down", up = "Up", right = "Right" }
     pcall(vim.cmd, "TmuxNavigate" .. tmux[dir])
