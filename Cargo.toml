@@ -1,0 +1,19 @@
+[package]
+name = "vim-herdr-navigation"
+version = "0.2.0"
+edition = "2021"
+description = "Seamless Ctrl+h/j/k/l navigation across herdr panes and Vim/Neovim splits"
+license = "MIT"
+
+[[bin]]
+name = "navigate"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+fancy-regex = "0.14"
+
+[profile.release]
+opt-level = 2
+strip = true

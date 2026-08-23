@@ -11,16 +11,17 @@ ported to herdr's CLI.
 
 Two cooperating sides, like `vim-tmux-navigator`:
 
-- **herdr side** (`navigate.sh`): a herdr keybind binds `Ctrl+h/j/k/l` to a
-  plugin action. On each press the action checks the focused pane's _foreground_
-  process via `herdr pane process-info`. If it's Vim/Neovim it forwards the key
-  into that pane with `herdr pane send-keys`; otherwise it moves herdr's focus.
-  Focus is **smart**: rather than a single directional hop, the target pane is
-  chosen from the tab's geometry using a per-tab preferred coordinate so that
-  crossing into a stacked column lands on the row you were last in — not always
-  the top pane. The focus itself is a single `pane.focus` call over herdr's
-  socket (focus-by-id), so there's no intermediate render of the pane in
-  between. See [Smart focus](#smart-focus) below.
+- **herdr side** (`navigate`, a Rust binary built from `src/`): a herdr keybind
+  binds `Ctrl+h/j/k/l` to a plugin action. On each press the action checks the
+  focused pane's _foreground_ process via `herdr pane process-info`. If it's
+  Vim/Neovim it forwards the key into that pane with `herdr pane send-keys`;
+  otherwise it moves herdr's focus. Focus is **smart**: rather than a single
+  directional hop, the target pane is chosen from the tab's geometry using a
+  per-tab preferred coordinate so that crossing into a stacked column lands on
+  the row you were last in — not always the top pane. The focus itself is a
+  single `pane.focus` call over herdr's socket (focus-by-id), so there's no
+  intermediate render of the pane in between. See [Smart focus](#smart-focus)
+  below.
 - **editor side** (`editor/nvim.lua`, `editor/vim.vim`): maps the same keys to
   `wincmd h/j/k/l`. If the window didn't change (Vim is at an edge), it calls
   `herdr pane focus --direction` to cross into the neighbouring herdr pane. Vim
@@ -29,19 +30,23 @@ Two cooperating sides, like `vim-tmux-navigator`:
 ## Requirements
 
 - herdr `>= 0.7.0`
-- `jq` (used by `navigate.sh` to detect Vim and to compute smart focus; without
-  it the keys still move herdr panes, just without Vim awareness or the smart
-  target selection)
-- `python3` (used for the single-call focus-by-id over the herdr socket; if
-  absent, `navigate.sh` falls back to a two-hop directional walk)
+- A Rust toolchain (to build the `navigate` binary — run `make install` or
+  `cargo build --release` once after linking)
 - Tested on Linux or macOS
 
 ## Install
 
 ```bash
 herdr plugin link /path/to/vim-herdr-navigation   # local checkout
+make install                                       # builds target/release/navigate
+# (or: cargo build --release)
 herdr plugin action list --plugin vim-herdr-navigation
 ```
+
+If you use [`just`](https://github.com/casey/just), the bundled justfile wraps
+the common workflows: `just build`, `just link`, `just unlink`, `just relink`,
+`just test`, `just replace-gh` (swap the local link for the published GitHub
+version).
 
 ### 1. Bind the keys in herdr
 
@@ -133,7 +138,7 @@ or, simply copy and pasta.
   `<BS>` separately if it starts navigating.
 ## Smart focus
 
-When you move between herdr panes (the non-Vim path), `navigate.sh` doesn't just
+When you move between herdr panes (the non-Vim path), `navigate` doesn't just
 hop one pane in the requested direction. It reads the tab layout, finds the
 panes beyond you in that direction, and picks the one whose row (for left/right)
 or column (for up/down) matches the one you were last in — a per-tab preferred
@@ -161,10 +166,9 @@ preference simply re-seeds from the current pane on the next move.
 The focus itself is a single `pane.focus { pane_id }` call over herdr's unix
 socket (`$HERDR_SOCKET_PATH`, injected by herdr into every pane) — focus-by-id,
 which the CLI doesn't expose for terminal panes. One call means no intermediate
-render of the pane in between, so no flicker. If `python3` or the socket is
-unavailable, `navigate.sh` falls back to a two-hop directional walk
-(`pane focus --direction` twice), which may briefly render the intermediate
-pane.
+render of the pane in between, so no flicker. If the socket is unavailable,
+`navigate` falls back to a two-hop directional walk (`pane focus --direction`
+twice), which may briefly render the intermediate pane.
 
 ## Notes & tradeoffs
 

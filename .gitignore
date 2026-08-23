@@ -1,2 +1,5 @@
 # Serena tool state (local only)
 .serena/
+
+# Rust build output
+target/

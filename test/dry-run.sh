@@ -140,11 +140,20 @@ sock_pid=$!
 # wait for socket to appear
 for _ in $(seq 1 50); do [ -S "$fake_sock" ] && break; sleep 0.02; done
 
+# Binary under test: defaults to the Rust release build; override with
+#   NAV_BIN=/path/to/navigate ./test/dry-run.sh        (Rust)
+#   NAV_BIN="$PWD/navigate.sh.legacy" ./test/dry-run.sh  (legacy shell, via bash)
+nav_bin="${NAV_BIN:-$root/target/release/navigate}"
+
 run() {
   echo
-  echo ">>> navigate.sh $1   (focused before: $(jq -r .focused "$model"))"
+  echo ">>> $(basename "$nav_bin") $1   (focused before: $(jq -r .focused "$model"))"
   export HERDR_PANE_ID="$(jq -r .focused "$model")"
-  bash "$root/navigate.sh" "$1"
+  if [ "${nav_bin##*.}" = "sh" ] || [ "${nav_bin##*.}" = "legacy" ]; then
+    bash "$nav_bin" "$1"
+  else
+    "$nav_bin" "$1"
+  fi
   echo "    focused after : $(jq -r .focused "$model")"
   echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)')"
 }
