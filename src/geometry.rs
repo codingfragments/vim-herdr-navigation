@@ -114,6 +114,7 @@ mod tests {
         Layout {
             focused_pane_id: Some(focused.to_string()),
             tab_id: Some("w:t1".to_string()),
+            workspace_id: Some("w".to_string()),
             zoomed: Some(false),
             panes: panes
                 .iter()

@@ -12,6 +12,8 @@ platforms = ["linux", "macos"]
 # The Rust binary is built with `make install` (or `just build`) into
 # target/release/navigate. herdr resolves the path relative to the plugin dir.
 
+# --- Default action set: same-tab navigation (Ctrl+h/j/k/l) -------------
+
 [[actions]]
 id = "left"
 title = "Navigate left (Vim/herdr)"
@@ -35,3 +37,32 @@ id = "right"
 title = "Navigate right (Vim/herdr)"
 contexts = ["global"]
 command = ["./target/release/navigate", "right"]
+
+# --- Cross-tab action set: switch tabs at the horizontal edge -----------
+# Bind these to a second chord (e.g. Alt+h/j/k/l) in config.toml. Passing
+# --cross-tabs enables cross-tab navigation at the left/right edge for this
+# invocation only, independent of HERDR_NAV_CROSS_TABS. Up/down are unchanged.
+
+[[actions]]
+id = "left-cross"
+title = "Navigate left, cross tabs at edge (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross-tabs", "left"]
+
+[[actions]]
+id = "down-cross"
+title = "Navigate down (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross-tabs", "down"]
+
+[[actions]]
+id = "up-cross"
+title = "Navigate up (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross-tabs", "up"]
+
+[[actions]]
+id = "right-cross"
+title = "Navigate right, cross tabs at edge (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross-tabs", "right"]

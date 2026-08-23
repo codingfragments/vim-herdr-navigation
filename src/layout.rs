@@ -23,6 +23,8 @@ pub struct Layout {
     #[serde(default)]
     pub tab_id: Option<String>,
     #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub zoomed: Option<bool>,
     pub panes: Vec<Pane>,
 }

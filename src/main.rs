@@ -17,6 +17,7 @@ mod herdr;
 mod layout;
 mod socket;
 mod state;
+mod tabs;
 mod vim;
 mod walk;
 
@@ -25,15 +26,41 @@ use std::process::exit;
 use direction::{Axis, Direction};
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("usage: navigate <left|down|up|right>");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        eprintln!("usage: navigate [--cross-tabs] <left|down|up|right>");
         exit(2);
     }
-    let dir = match Direction::from_str(&args[1]) {
+    // `--cross-tabs` opts in to cross-tab navigation at the horizontal edge,
+    // overriding HERDR_NAV_CROSS_TABS. The flag may appear before the direction.
+    let mut cross_tabs_override: Option<bool> = None;
+    let mut positional: Vec<&str> = Vec::new();
+    for a in &args {
+        match a.as_str() {
+            "--cross-tabs" | "-t" => cross_tabs_override = Some(true),
+            "--no-cross-tabs" => cross_tabs_override = Some(false),
+            "--" => {
+                // treat the rest as positional
+                continue;
+            }
+            _ if a.starts_with('-') && a.len() > 1 && !positional.is_empty() => {
+                // allow the direction to look like a path component; unknown flags after a positional are ignored
+                positional.push(a);
+            }
+            _ => positional.push(a),
+        }
+    }
+    let dir_arg = match positional.first() {
+        Some(d) => d,
+        None => {
+            eprintln!("usage: navigate [--cross-tabs] <left|down|up|right>");
+            exit(2);
+        }
+    };
+    let dir = match Direction::from_str(dir_arg) {
         Ok(d) => d,
         Err(_) => {
-            eprintln!("navigate: unknown direction: {}", args[1]);
+            eprintln!("navigate: unknown direction: {dir_arg}");
             exit(2);
         }
     };
@@ -42,6 +69,10 @@ fn main() {
     let dir_name = dir.name();
     let herdr = herdr::herdr_bin();
     let pane = herdr::pane_id();
+
+    // Cross-tab navigation: enabled by `--cross-tabs` flag (overrides env) or
+    // by HERDR_NAV_CROSS_TABS=1. Computed once so the no-candidate path can use it.
+    let cross_tabs = cross_tabs_override.unwrap_or_else(tabs::env_enabled);
 
     // --- Vim detection + forward -------------------------------------------
     let passthrough_re = std::env::var("HERDR_NAV_PASSTHROUGH_RE").unwrap_or_default();
@@ -88,11 +119,31 @@ fn main() {
 
     // --- Geometry + smart target selection --------------------------------
     let state_file = state::state_file(&tab_id);
-    let (target, target_cx, target_cy, pref_val) =
-        match geometry::select(&layout, &focused_id, dir, axis, &state_file) {
-            Some(r) => r,
-            None => herdr::focus_direction(&herdr, dir_name, Some(&pane)),
-        };
+    let (target, target_cx, target_cy, pref_val) = match geometry::select(
+        &layout,
+        &focused_id,
+        dir,
+        axis,
+        &state_file,
+    ) {
+        Some(r) => r,
+        None => {
+            // No candidate pane in this direction (we're at an edge). If
+            // cross-tab navigation is enabled and this is a horizontal move,
+            // switch to the adjacent tab in the same workspace. Otherwise fall
+            // back to the plain directional focus (a no-op at the edge).
+            if cross_tabs && axis == Axis::H {
+                let ws = layout.workspace_id.clone().unwrap_or_default();
+                let sock = socket::socket_path();
+                if !ws.is_empty()
+                    && tabs::cross_tab(&herdr, &sock, &tab_id, &ws, dir)
+                {
+                    exit(0);
+                }
+            }
+            herdr::focus_direction(&herdr, dir_name, Some(&pane));
+        }
+    };
     state::ensure_dir();
 
     // --- Focus by id over the socket (primary path) -----------------------
