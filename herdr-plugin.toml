@@ -1,6 +1,6 @@
 id = "vim-herdr-navigation"
 name = "Vim Herdr Navigation"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.7.0"
 description = "Seamless Ctrl+h/j/k/l navigation across herdr panes and Vim/Neovim splits"
 platforms = ["linux", "macos"]
@@ -8,27 +8,30 @@ platforms = ["linux", "macos"]
 # One action per direction. Each is bound to a direct Ctrl chord in herdr's
 # config (see README). The action forwards the key into Vim when the focused
 # pane is running Vim/Neovim, otherwise it moves herdr's pane focus.
+#
+# The Rust binary is built with `make install` (or `just build`) into
+# target/release/navigate. herdr resolves the path relative to the plugin dir.
 
 [[actions]]
 id = "left"
 title = "Navigate left (Vim/herdr)"
 contexts = ["global"]
-command = ["bash", "navigate.sh", "left"]
+command = ["./target/release/navigate", "left"]
 
 [[actions]]
 id = "down"
 title = "Navigate down (Vim/herdr)"
 contexts = ["global"]
-command = ["bash", "navigate.sh", "down"]
+command = ["./target/release/navigate", "down"]
 
 [[actions]]
 id = "up"
 title = "Navigate up (Vim/herdr)"
 contexts = ["global"]
-command = ["bash", "navigate.sh", "up"]
+command = ["./target/release/navigate", "up"]
 
 [[actions]]
 id = "right"
 title = "Navigate right (Vim/herdr)"
 contexts = ["global"]
-command = ["bash", "navigate.sh", "right"]
+command = ["./target/release/navigate", "right"]
