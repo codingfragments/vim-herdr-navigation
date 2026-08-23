@@ -5,12 +5,19 @@ min_herdr_version = "0.7.0"
 description = "Seamless Ctrl+h/j/k/l navigation across herdr panes and Vim/Neovim splits"
 platforms = ["linux", "macos"]
 
+# Build the Rust binary on install/link. Requires `cargo` on the host.
+# `herdr plugin install` / `herdr plugin link` run this before registering
+# actions, so ./target/release/navigate exists by the time actions fire.
+# Herdr reports build failures but does not install missing toolchains.
+
+[[build]]
+command = ["cargo", "build", "--release"]
+
 # One action per direction. Each is bound to a direct Ctrl chord in herdr's
 # config (see README). The action forwards the key into Vim when the focused
 # pane is running Vim/Neovim, otherwise it moves herdr's pane focus.
 #
-# The Rust binary is built with `make install` (or `just build`) into
-# target/release/navigate. herdr resolves the path relative to the plugin dir.
+# herdr resolves the command path relative to the plugin dir.
 
 # --- Default action set: same-tab navigation (Ctrl+h/j/k/l) -------------
 
