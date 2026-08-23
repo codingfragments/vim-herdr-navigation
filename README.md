@@ -128,6 +128,21 @@ or, simply copy and pasta.
 
   Unlike Vim, these apps don't cross _out_ at an edge — use `prefix+h/j/k/l` to
   leave the pane.
+- **Cross-tab at the horizontal edge.** By default, moving `left`/`right` when
+  you're already at the leftmost/rightmost pane of the tab is a no-op. Set
+  `HERDR_NAV_CROSS_TABS=1` to instead switch to the adjacent tab in the same
+  workspace — `right` at the right edge goes to the next tab, `left` at the
+  left edge goes to the previous tab (ordered by the tab's position in the
+  bar). The new tab's last-focused pane is restored. No-op if you're already
+  on the last/first tab. Up/down are unaffected. This is off by default to
+  preserve existing edge behavior.
+
+  ```bash
+  export HERDR_NAV_CROSS_TABS=1
+  ```
+
+  (Only the non-Vim path crosses tabs today. The Vim edge-cross goes through
+  the editor side; wiring that through `navigate` too is a planned follow-up.)
 - **`Ctrl+l` / `Ctrl+k` in shells.** Binding these globally shadows readline's
   `Ctrl+L` (clear screen) and `Ctrl+K` (kill line) inside non-Vim panes. This is
   the same tradeoff as `vim-tmux-navigator`. If you want them back, bind clear to

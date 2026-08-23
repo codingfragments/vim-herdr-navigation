@@ -17,6 +17,7 @@ mod herdr;
 mod layout;
 mod socket;
 mod state;
+mod tabs;
 mod vim;
 mod walk;
 
@@ -88,11 +89,31 @@ fn main() {
 
     // --- Geometry + smart target selection --------------------------------
     let state_file = state::state_file(&tab_id);
-    let (target, target_cx, target_cy, pref_val) =
-        match geometry::select(&layout, &focused_id, dir, axis, &state_file) {
-            Some(r) => r,
-            None => herdr::focus_direction(&herdr, dir_name, Some(&pane)),
-        };
+    let (target, target_cx, target_cy, pref_val) = match geometry::select(
+        &layout,
+        &focused_id,
+        dir,
+        axis,
+        &state_file,
+    ) {
+        Some(r) => r,
+        None => {
+            // No candidate pane in this direction (we're at an edge). If
+            // cross-tab navigation is enabled and this is a horizontal move,
+            // switch to the adjacent tab in the same workspace. Otherwise fall
+            // back to the plain directional focus (a no-op at the edge).
+            if tabs::enabled() && axis == Axis::H {
+                let ws = layout.workspace_id.clone().unwrap_or_default();
+                let sock = socket::socket_path();
+                if !ws.is_empty()
+                    && tabs::cross_tab(&herdr, &sock, &tab_id, &ws, dir)
+                {
+                    exit(0);
+                }
+            }
+            herdr::focus_direction(&herdr, dir_name, Some(&pane));
+        }
+    };
     state::ensure_dir();
 
     // --- Focus by id over the socket (primary path) -----------------------
