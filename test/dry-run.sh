@@ -211,6 +211,21 @@ run() {
   echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)')"
 }
 
+# Like run(), but passes --cross-tabs (CLI flag path) and force-unsets the env
+# var so we verify the flag overrides independently of HERDR_NAV_CROSS_TABS.
+run_cross() {
+  echo
+  echo ">>> $(basename "$nav_bin") --cross-tabs $1   (focused before: $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model"))"
+  export HERDR_PANE_ID="$(jq -r .focused "$model")"
+  if [[ "$nav_bin" == *.sh || "$nav_bin" == *.legacy ]]; then
+    echo "    (legacy shell script ignores --cross-tabs; skipping)"
+  else
+    env -u HERDR_NAV_CROSS_TABS "$nav_bin" --cross-tabs "$1"
+  fi
+  echo "    focused after : $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model")"
+  echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)')"
+}
+
 echo "=== Scenario 1: C -> left -> A -> right (smart focus, should return to C, not B) ==="
 export HERDR_NAV_CROSS_TABS=0
 printf '{"focused":"C","active_tab":"w:t1","tabs":{"w:t1":{"focused":"C"},"w:t2":{"focused":"D"}}}\n' > "$model"
@@ -247,6 +262,17 @@ echo "=== Scenario 4: cross-tab DISABLED at edge => no-op (existing behavior) ==
 export HERDR_NAV_CROSS_TABS=0
 printf '{"focused":"C","active_tab":"w:t1","tabs":{"w:t1":{"focused":"C"},"w:t2":{"focused":"D"}}}\n' > "$model"
 run right    # C at right edge, cross-tab off -> [walk] NO NEIGHBOR, stays on C/tab 1
+
+echo
+echo "=== Scenario 5: --cross-tabs CLI flag (env var unset) ============== "
+# Verify the flag enables cross-tab even with HERDR_NAV_CROSS_TABS unset.
+stdbuf -oL env -u HERDR_NAV_CROSS_TABS true  # sanity: env -u works on this host
+printf '{"focused":"C","active_tab":"w:t1","tabs":{"w:t1":{"focused":"C"},"w:t2":{"focused":"D"}}}\n' > "$model"
+rm -f "$state_dir/w_t1.json"
+echo "--- C -> right --cross-tabs (edge) => should switch to tab 2 (D) ---"
+run_cross right    # C at right edge, flag set -> cross-tab -> w:t2 (D)
+echo "--- D -> left --cross-tabs (edge) => should switch back to tab 1 (C) ---"
+run_cross left     # D at left edge, flag set -> cross-tab -> w:t1 (C)
 
 echo
 echo "=== Cleanup ==="

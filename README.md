@@ -129,17 +129,48 @@ or, simply copy and pasta.
   Unlike Vim, these apps don't cross _out_ at an edge — use `prefix+h/j/k/l` to
   leave the pane.
 - **Cross-tab at the horizontal edge.** By default, moving `left`/`right` when
-  you're already at the leftmost/rightmost pane of the tab is a no-op. Set
-  `HERDR_NAV_CROSS_TABS=1` to instead switch to the adjacent tab in the same
-  workspace — `right` at the right edge goes to the next tab, `left` at the
-  left edge goes to the previous tab (ordered by the tab's position in the
-  bar). The new tab's last-focused pane is restored. No-op if you're already
-  on the last/first tab. Up/down are unaffected. This is off by default to
-  preserve existing edge behavior.
+  you're already at the leftmost/rightmost pane of the tab is a no-op. There are
+  two ways to opt in to crossing into the adjacent tab at the edge:
 
-  ```bash
-  export HERDR_NAV_CROSS_TABS=1
-  ```
+  - **Second action set (recommended).** This plugin ships a second set of
+    actions (`left-cross`/`down-cross`/`up-cross`/`right-cross`) that pass
+    `--cross-tabs` to the binary. Bind them to a second chord (e.g.
+    `Alt+h/j/k/l`) in `config.toml` so both behaviors coexist on separate keys:
+
+    ```toml
+    [[keys.command]]
+    key = "alt+h"
+    type = "plugin_action"
+    command = "vim-herdr-navigation.left-cross"
+
+    [[keys.command]]
+    key = "alt+j"
+    type = "plugin_action"
+    command = "vim-herdr-navigation.down-cross"
+
+    [[keys.command]]
+    key = "alt+k"
+    type = "plugin_action"
+    command = "vim-herdr-navigation.up-cross"
+
+    [[keys.command]]
+    key = "alt+l"
+    type = "plugin_action"
+    command = "vim-herdr-navigation.right-cross"
+    ```
+
+    Now `Ctrl+h/j/k/l` stays within the tab (no-op at the edge), and
+    `Alt+h/j/k/l` crosses to the adjacent tab when you hit the left/right edge.
+    Up/down are unaffected on either set.
+  - **Global env var.** `export HERDR_NAV_CROSS_TABS=1` makes _every_ navigation
+    cross tabs at the edge (so `Ctrl+h/j/k/l` itself crosses). No second key
+    set; simpler but you lose the same-tab-only behavior.
+
+  In both cases: `right` at the right edge -> next tab, `left` at the left edge
+  -> previous tab (ordered by the tab's position in the bar); the new tab's
+  last-focused pane is restored; no-op if you're already on the last/first tab;
+  up/down never cross tabs. The `--cross-tabs` flag takes precedence over the
+  env var.
 
   (Only the non-Vim path crosses tabs today. The Vim edge-cross goes through
   the editor side; wiring that through `navigate` too is a planned follow-up.)

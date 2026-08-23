@@ -27,11 +27,14 @@ pub struct TabInfo {
     #[serde(default)]
     pub number: Option<u64>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub focused: Option<bool>,
 }
 
-/// Is cross-tab navigation enabled? `HERDR_NAV_CROSS_TABS` in {1, true, yes, on}.
-pub fn enabled() -> bool {
+/// Is cross-tab navigation enabled via the env var? `HERDR_NAV_CROSS_TABS`
+/// in {1, true, yes, on}. (The `--cross-tabs` CLI flag overrides this; see
+/// main.rs.)
+pub fn env_enabled() -> bool {
     match std::env::var("HERDR_NAV_CROSS_TABS") {
         Ok(v) => matches!(
             v.trim().to_ascii_lowercase().as_str(),
@@ -134,18 +137,18 @@ mod tests {
     fn enabled_defaults_off() {
         // Not set in test env.
         std::env::remove_var("HERDR_NAV_CROSS_TABS");
-        assert!(!enabled());
+        assert!(!env_enabled());
     }
 
     #[test]
     fn enabled_truthy_values() {
         for v in ["1", "true", "TRUE", "yes", "on", " On "] {
             std::env::set_var("HERDR_NAV_CROSS_TABS", v);
-            assert!(enabled(), "should be enabled for {v}");
+            assert!(env_enabled(), "should be enabled for {v}");
         }
         for v in ["0", "false", "no", "off", "", "maybe"] {
             std::env::set_var("HERDR_NAV_CROSS_TABS", v);
-            assert!(!enabled(), "should be disabled for {v}");
+            assert!(!env_enabled(), "should be disabled for {v}");
         }
         std::env::remove_var("HERDR_NAV_CROSS_TABS");
     }
