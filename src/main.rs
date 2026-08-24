@@ -142,13 +142,19 @@ fn main() {
         None => {
             // No candidate pane in this direction (we're at an edge). If
             // cross-tab navigation is enabled and this is a horizontal move,
-            // switch to the adjacent tab in the same workspace. Otherwise fall
-            // back to the plain directional focus (a no-op at the edge).
+            // switch to the adjacent tab in the same workspace (wrapping at
+            // the ends) and land on the destination's edge column. Otherwise
+            // fall back to the plain directional focus (a no-op at the edge).
             if cross_tabs && axis == Axis::H {
                 let ws = layout.workspace_id.clone().unwrap_or_default();
                 let sock = socket::socket_path();
+                // Seed the destination's preferred_y from the source pane's
+                // center-y so the row survives the tab crossing.
+                let seed_cy = geometry::focused_rect(&layout, &focused_id)
+                    .map(|r| r.y as f64 + r.height as f64 / 2.0)
+                    .unwrap_or(0.0);
                 if !ws.is_empty()
-                    && tabs::cross_tab(&herdr, &sock, &tab_id, &ws, dir)
+                    && tabs::cross_tab(&herdr, &sock, &tab_id, &ws, dir, seed_cy)
                 {
                     exit(0);
                 }

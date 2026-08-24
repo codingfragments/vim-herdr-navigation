@@ -50,3 +50,22 @@ pub fn parse(v: &Value) -> Option<Layout> {
     let resp: LayoutResp = serde_json::from_value(v.clone()).ok()?;
     Some(resp.result.layout)
 }
+
+/// From a `session.snapshot` response, find the pane-layout snapshot whose
+/// `tab_id` matches. The snapshot's `layouts[]` entries have the same shape as
+/// `pane.layout`'s result layout (extra `area`/`splits`/pane `focused` fields
+/// are ignored by serde). Returns None if the snapshot is malformed or the tab
+/// isn't present. Used by the cross-tab path to read the destination tab's
+/// geometry without relying on `pane layout --current` (which resolves to the
+/// source pane's tab via `$HERDR_PANE_ID`).
+pub fn find_snapshot_layout(snapshot: &Value, tab_id: &str) -> Option<Layout> {
+    let layouts = snapshot
+        .get("result")?
+        .get("snapshot")?
+        .get("layouts")?
+        .as_array()?;
+    layouts
+        .iter()
+        .find(|l| l.get("tab_id").and_then(|t| t.as_str()) == Some(tab_id))
+        .and_then(|l| serde_json::from_value(l.clone()).ok())
+}

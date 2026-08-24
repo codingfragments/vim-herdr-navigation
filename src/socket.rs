@@ -95,3 +95,12 @@ pub fn focus_tab(sock_path: &Path, tab_id: &str) -> bool {
     };
     resp.get("result").is_some() && resp.get("error").is_none()
 }
+
+/// `session.snapshot {}` over the socket → the full snapshot value (containing
+/// `result.snapshot.layouts[]` with every tab's pane-layout snapshot, plus
+/// `tabs[]`, `panes[]`, etc.), or None on failure. Used by the cross-tab path
+/// to read the *destination* tab's geometry race-free (a tab's layout is
+/// independent of focus, so it can be read before switching).
+pub fn session_snapshot(sock_path: &Path) -> Option<Value> {
+    call(sock_path, "session.snapshot", json!({}))
+}

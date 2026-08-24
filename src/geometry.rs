@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use crate::direction::{Axis, Direction};
-use crate::layout::{Layout, Rect};
+use crate::layout::{Layout, Pane, Rect};
 
 /// A candidate pane with its float center.
 struct Cand {
@@ -50,6 +50,57 @@ fn overlap(r: &Rect, s: &Rect, dir: Direction) -> bool {
             (r.x < s.x + s.width) && (s.x < r.x + r.width)
         }
     }
+}
+
+/// Select the edge-column pane of `layout` for a cross-tab arrival in `dir`.
+/// `Right` lands on the leftmost column (min `x`); `Left` lands on the
+/// rightmost column (max `x + width`). Within that column the pane whose
+/// center-y is nearest the preferred y is chosen — stored value if any, else
+/// `seed_cy` — so the row you were on survives the tab crossing. Vertical
+/// directions never cross tabs and return None. Returns
+/// `(pane_id, cx, cy, pref_val)` or None if the layout has no panes / no edge
+/// column / a non-horizontal direction.
+pub fn select_edge_column(
+    layout: &Layout,
+    dir: Direction,
+    state_file: &Path,
+    seed_cy: f64,
+) -> Option<(String, f64, f64, f64)> {
+    if layout.panes.is_empty() {
+        return None;
+    }
+    // Edge column: Right -> leftmost (min x); Left -> rightmost (max x+width).
+    let edge_panes: Vec<&Pane> = match dir {
+        Direction::Right => {
+            let min_x = layout.panes.iter().map(|p| p.rect.x).min()?;
+            layout.panes.iter().filter(|p| p.rect.x == min_x).collect()
+        }
+        Direction::Left => {
+            let max_xw = layout
+                .panes
+                .iter()
+                .map(|p| p.rect.x + p.rect.width)
+                .max()?;
+            layout
+                .panes
+                .iter()
+                .filter(|p| p.rect.x + p.rect.width == max_xw)
+                .collect()
+        }
+        _ => return None, // vertical never crosses tabs
+    };
+    if edge_panes.is_empty() {
+        return None;
+    }
+    let pref_val = crate::state::read_pref(state_file, "preferred_y").unwrap_or(seed_cy);
+    let target = edge_panes.iter().min_by(|a, b| {
+        let da = (a.rect.y as f64 + a.rect.height as f64 / 2.0 - pref_val).powi(2);
+        let db = (b.rect.y as f64 + b.rect.height as f64 / 2.0 - pref_val).powi(2);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    let tcx = target.rect.x as f64 + target.rect.width as f64 / 2.0;
+    let tcy = target.rect.y as f64 + target.rect.height as f64 / 2.0;
+    Some((target.pane_id.clone(), tcx, tcy, pref_val))
 }
 
 /// Select the target pane. Returns `(target_pane_id, target_cx, target_cy, pref_val)`
@@ -172,5 +223,68 @@ mod tests {
         // single pane
         let l = layout(&[("A", 0, 0, 100, 50)], "A");
         assert!(select(&l, "A", Direction::Right, Axis::H, Path::new("/x")).is_none());
+    }
+
+    // --- cross-tab edge-column selection (select_edge_column) ---------------
+
+    // Tab 2 layout for the wrap target: D spans the full width (single pane).
+    const D_ONLY: &[(&str, i64, i64, i64, i64)] = &[("D", 0, 0, 200, 50)];
+
+    #[test]
+    fn edge_column_right_lands_on_leftmost() {
+        // Moving Right into tab 1 -> leftmost column = {A}.
+        let l = layout(ABC, "B"); // focused pane irrelevant for edge selection
+        let (target, _, _, _) =
+            select_edge_column(&l, Direction::Right, Path::new("/nonexistent.json"), 25.0).unwrap();
+        assert_eq!(target, "A");
+    }
+
+    #[test]
+    fn edge_column_left_lands_on_rightmost_nearest_row() {
+        // Moving Left into tab 1 -> rightmost column = {B, C}. seed_cy = 25 is
+        // equidistant from B(cy=12.5) and C(cy=37.5); tie -> first in layout
+        // order (B).
+        let l = layout(ABC, "A");
+        let (target, _, _, pref) =
+            select_edge_column(&l, Direction::Left, Path::new("/nonexistent.json"), 25.0).unwrap();
+        assert_eq!(target, "B");
+        assert_eq!(pref, 25.0);
+    }
+
+    #[test]
+    fn edge_column_left_uses_stored_preferred_y() {
+        // Stored preferred_y = 37.5 (C's row) -> moving Left lands on C.
+        let l = layout(ABC, "A");
+        let tmp = std::env::temp_dir().join("vhnav_edge_state.json");
+        std::fs::write(&tmp, r#"{"preferred_y":37.5}"#).unwrap();
+        let (target, _, _, _) =
+            select_edge_column(&l, Direction::Left, &tmp, 25.0).unwrap();
+        assert_eq!(target, "C");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn edge_column_single_pane_lands_on_it() {
+        // Tab 2 has only D; both directions land on D.
+        let l = layout(D_ONLY, "D");
+        let (t_right, _, _, _) =
+            select_edge_column(&l, Direction::Right, Path::new("/x"), 25.0).unwrap();
+        let (t_left, _, _, _) =
+            select_edge_column(&l, Direction::Left, Path::new("/x"), 25.0).unwrap();
+        assert_eq!(t_right, "D");
+        assert_eq!(t_left, "D");
+    }
+
+    #[test]
+    fn edge_column_vertical_returns_none() {
+        let l = layout(ABC, "A");
+        assert!(select_edge_column(&l, Direction::Up, Path::new("/x"), 25.0).is_none());
+        assert!(select_edge_column(&l, Direction::Down, Path::new("/x"), 25.0).is_none());
+    }
+
+    #[test]
+    fn edge_column_empty_layout_returns_none() {
+        let l = layout(&[], "A");
+        assert!(select_edge_column(&l, Direction::Right, Path::new("/x"), 25.0).is_none());
     }
 }
