@@ -38,4 +38,4 @@ test: build
 
 # Replace the local dev link with the published GitHub version
 replace-gh: unlink
-    herdr plugin install -y {{gh_repo}}
+    herdr plugin install  {{gh_repo}} -y
