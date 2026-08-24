@@ -124,6 +124,15 @@ elif args[:2]==["tab","list"]: print(tab_list_json())
 elif args[:2]==["tab","focus"]: tab_focus(args[2] if len(args)>2 else "")
 elif args[:2]==["pane","send-keys"]:
     print(f"[walk] send-keys {args[2:]} (Vim path)", file=sys.stderr)
+elif args[:2]==["api","snapshot"]:
+    m = load()
+    layouts = []
+    for tid, panes in TABS.items():
+        f = m.get("tabs",{}).get(tid,{}).get("focused","A")
+        layouts.append({"tab_id": tid, "workspace_id": "w", "zoomed": False,
+            "focused_pane_id": f,
+            "panes": [{"pane_id": p, "rect": r, "focused": p == f} for p, r in panes.items()]})
+    print(json.dumps({"result": {"snapshot": {"layouts": layouts}}}))
 else: print(f"[cli] unhandled: {args}", file=sys.stderr)
 PY
 chmod +x "$fake_herdr"
@@ -177,6 +186,21 @@ while True:
             m["active_tab"] = tid; m["focused"] = m["tabs"][tid].get("focused","A"); save(m)
             print(f"[socket] tab.focus {tid}  (was {prev}) -> focused {m['focused']}", file=sys.stderr)
             resp = {"id": req.get("id"), "result": {"type":"tab_info","tab":{"tab_id":tid,"focused":True}}}
+        elif method == "session.snapshot":
+            m = load()
+            print(f"[socket] session.snapshot (active={m.get('active_tab','w:t1')})", file=sys.stderr)
+            layouts = []
+            for tid, panes in TABS.items():
+                f = m.get("tabs",{}).get(tid,{}).get("focused","A")
+                layouts.append({
+                    "tab_id": tid, "workspace_id": "w", "zoomed": False,
+                    "focused_pane_id": f,
+                    "panes": [{"pane_id": p, "rect": r, "focused": p == f} for p, r in panes.items()],
+                })
+            resp = {"id": req.get("id"), "result": {"snapshot": {"layouts": layouts, "tabs": [
+                {"tab_id":"w:t1","workspace_id":"w","number":1,"pane_count":3},
+                {"tab_id":"w:t2","workspace_id":"w","number":2,"pane_count":1},
+            ]}}}
         else:
             print(f"[socket] unknown method {method}", file=sys.stderr)
             resp = {"id": req.get("id"), "error": {"code":-32601,"message":"method not found"}}

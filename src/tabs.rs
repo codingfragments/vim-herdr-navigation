@@ -142,6 +142,27 @@ pub fn cross_tab(
     };
     let target_id = &tabs[neighbor].tab_id;
 
+    // --- Read the destination tab's geometry (race-free) ------------------
+    // A tab's pane layout is independent of focus, so read it from the session
+    // snapshot BEFORE switching. `pane layout --current` can't be used here:
+    // it resolves to the source pane's tab via `$HERDR_PANE_ID`, which would
+    // hand us the *source* tab's layout and the subsequent focus-by-id would
+    // yank focus back to the source tab (the "briefly in tab 2, then back to
+    // tab 1" race). Socket preferred; `herdr api snapshot` CLI fallback.
+    let dest_layout = socket::session_snapshot(sock_path)
+        .and_then(|s| crate::layout::find_snapshot_layout(&s, target_id))
+        .or_else(|| {
+            let out = std::process::Command::new(herdr)
+                .args(["api", "snapshot"])
+                .output()
+                .ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            let v: Value = serde_json::from_slice(&out.stdout).ok()?;
+            crate::layout::find_snapshot_layout(&v, target_id)
+        });
+
     // --- Switch tabs: socket preferred, CLI fallback ----------------------
     let switched = if socket::focus_tab(sock_path, target_id) {
         true
@@ -157,15 +178,9 @@ pub fn cross_tab(
     }
 
     // --- Land on the destination tab's edge column -----------------------
-    // The destination tab is now active, so read its layout via `--current`
-    // (the source pane is in the old tab and would report the old layout).
-    let dest_layout_val = match crate::herdr::layout_current(herdr) {
-        Some(v) => v,
-        None => return true, // tab switched; leave herdr's restored pane
-    };
-    let dest_layout = match crate::layout::parse(&dest_layout_val) {
+    let dest_layout = match dest_layout {
         Some(l) => l,
-        None => return true,
+        None => return true, // tab switched; couldn't read geometry — leave restored pane
     };
     let dest_tab_id = match &dest_layout.tab_id {
         Some(t) if !t.is_empty() => t.clone(),
