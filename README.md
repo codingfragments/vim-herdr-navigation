@@ -173,10 +173,15 @@ or, simply copy and pasta.
     set; simpler but you lose the same-tab-only behavior.
 
   In both cases: `right` at the right edge -> next tab, `left` at the left edge
-  -> previous tab (ordered by the tab's position in the bar); the new tab's
-  last-focused pane is restored; no-op if you're already on the last/first tab;
-  up/down never cross tabs. The `--cross-tabs` flag takes precedence over the
-  env var.
+  -> previous tab (ordered by the tab's position in the bar); the tab index
+  **wraps** — `right` on the last tab cycles to the first, `left` on the first
+  cycles to the last — so the tabs behave like one continuous horizontal strip.
+  On arrival the destination tab's **edge column** is selected (leftmost column
+  for a `right` move, rightmost for a `left` move) at the row nearest the
+  destination tab's stored `preferred_y` (seeded from the row you left), and
+  that pane is focused; the destination tab's preferred coordinates are then
+  persisted, just like an in-tab move. Up/down never cross tabs. The
+  `--cross-tabs` flag takes precedence over the env var.
 
   (The Vim edge-cross now goes through `navigate` too — see the `*-edge`
   actions in `herdr-plugin.toml` and the editor side. It uses `--no-forward` so

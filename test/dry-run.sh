@@ -198,6 +198,18 @@ for _ in $(seq 1 50); do [ -S "$fake_sock" ] && break; sleep 0.02; done
 
 nav_bin="${NAV_BIN:-$root/target/release/navigate}"
 
+# Print every per-tab state file (cross-tab now writes the *destination* tab's
+# state, so we want to see both w_t1 and w_t2).
+show_states() {
+  local first=1
+  for f in "$state_dir"/*.json; do
+    [[ -f "$f" ]] || continue
+    if [[ $first -eq 1 ]]; then first=0; else echo; fi
+    printf '    %-12s : %s' "$(basename "$f")" "$(cat "$f")"
+  done
+  if [[ $first -eq 1 ]]; then echo '    state files  : (none)'; fi
+}
+
 run() {
   echo
   echo ">>> $(basename "$nav_bin") $1   (focused before: $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model"))"
@@ -208,7 +220,7 @@ run() {
     "$nav_bin" "$1"
   fi
   echo "    focused after : $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model")"
-  echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)')"
+  show_states; echo
 }
 
 # Like run(), but passes --cross-tabs (CLI flag path) and force-unsets the env
@@ -223,7 +235,7 @@ run_cross() {
     env -u HERDR_NAV_CROSS_TABS "$nav_bin" --cross-tabs "$1"
   fi
   echo "    focused after : $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model")"
-  echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)')"
+  show_states; echo
 }
 
 echo "=== Scenario 1: C -> left -> A -> right (smart focus, should return to C, not B) ==="
@@ -244,18 +256,29 @@ run up       # C -> B
 run down     # B -> C
 
 echo
-echo "=== Scenario 3: cross-tab (HERDR_NAV_CROSS_TABS=1) ===================="
+# Layout reminder for the cross-tab scenarios:
+#   Tab 1 (w:t1):  A (left, full height) | B (top-right) | C (bottom-right)
+#   Tab 2 (w:t2):  D (full width, single pane)
+# Edge-column landing: moving right lands on the destination's LEFTMOST column;
+# moving left lands on the RIGHTMOST column, at the row nearest preferred_y
+# (seeded from the source pane's center-y). The tab index WRAPS, so right on
+# the last tab cycles to the first, and left on the first cycles to the last.
+echo "=== Scenario 3: cross-tab with cycling + edge-column landing (HERDR_NAV_CROSS_TABS=1) ==="
 export HERDR_NAV_CROSS_TABS=1
-# Start on C (rightmost pane of tab 1). Moving right hits the edge -> next tab.
 printf '{"focused":"C","active_tab":"w:t1","tabs":{"w:t1":{"focused":"C"},"w:t2":{"focused":"D"}}}\n' > "$model"
-rm -f "$state_dir/w_t1.json"
-echo "--- C -> right (edge) => should switch to tab 2 (D) ---"
+rm -f "$state_dir"/*.json
+echo "--- C -> right (right edge of tab 1) => switch to tab 2, land on leftmost col (D) ---"
+run right    # C at right edge -> cross-tab -> w:t2, leftmost col {D} -> D
+echo "--- D -> left (left edge of tab 2) => switch to tab 1, land on rightmost col (B, nearest row) ---"
+run left     # D at left edge -> cross-tab -> w:t1, rightmost col {B,C}; seed cy=25 -> tie -> B
+echo "--- B -> down (within tab 1, smart-focus) => C ---"
+run down     # B -> C (within tab 1; preferred_x seeded from B's column)
+echo "--- C -> right (right edge) => switch to tab 2, land on D ---"
 run right    # C at right edge -> cross-tab -> w:t2 (D)
-echo "--- D -> left (edge) => should switch back to tab 1 (C, last-focused) ---"
-run left     # D at left edge -> cross-tab -> w:t1 (C restored)
-echo "--- C -> right -> right again: second right from D (only pane) stays on tab 2 ---"
-run right    # C -> tab 2 (D)
-run right    # D at right edge, no next tab -> no-op (stays on tab 2, D)
+echo "--- D -> right (right edge, LAST tab) => WRAP to tab 1, land on leftmost col (A) ---"
+run right    # D at right edge, last tab -> wrap -> w:t1, leftmost col {A} -> A
+echo "--- A -> left (left edge, FIRST tab) => WRAP to tab 2, land on rightmost col (D) ---"
+run left     # A at left edge, first tab -> wrap -> w:t2, rightmost col {D} -> D
 
 echo
 echo "=== Scenario 4: cross-tab DISABLED at edge => no-op (existing behavior) ==="
@@ -265,14 +288,17 @@ run right    # C at right edge, cross-tab off -> [walk] NO NEIGHBOR, stays on C/
 
 echo
 echo "=== Scenario 5: --cross-tabs CLI flag (env var unset) ============== "
-# Verify the flag enables cross-tab even with HERDR_NAV_CROSS_TABS unset.
+# Verify the flag enables cross-tab (with cycling + edge-column landing) even
+# with HERDR_NAV_CROSS_TABS unset.
 stdbuf -oL env -u HERDR_NAV_CROSS_TABS true  # sanity: env -u works on this host
 printf '{"focused":"C","active_tab":"w:t1","tabs":{"w:t1":{"focused":"C"},"w:t2":{"focused":"D"}}}\n' > "$model"
-rm -f "$state_dir/w_t1.json"
-echo "--- C -> right --cross-tabs (edge) => should switch to tab 2 (D) ---"
-run_cross right    # C at right edge, flag set -> cross-tab -> w:t2 (D)
-echo "--- D -> left --cross-tabs (edge) => should switch back to tab 1 (C) ---"
-run_cross left     # D at left edge, flag set -> cross-tab -> w:t1 (C)
+rm -f "$state_dir"/*.json
+echo "--- C -> right --cross-tabs (edge) => switch to tab 2, land on leftmost col (D) ---"
+run_cross right    # C at right edge, flag set -> cross-tab -> w:t2, leftmost col {D} -> D
+echo "--- D -> right --cross-tabs (edge, LAST tab) => WRAP to tab 1, land on leftmost col (A) ---"
+run_cross right    # D at right edge, last tab, flag set -> wrap -> w:t1, leftmost col {A} -> A
+echo "--- A -> left --cross-tabs (edge, FIRST tab) => WRAP to tab 2, land on rightmost col (D) ---"
+run_cross left     # A at left edge, first tab, flag set -> wrap -> w:t2, rightmost col {D} -> D
 
 echo
 echo "=== Scenario 6: Vim edge-cross via --no-forward (no loop, smart-focus+cross-tab) ==="
@@ -290,10 +316,10 @@ if grep -q 'send-keys' /tmp/vhnav_edge.log; then
   echo "FAIL: --no-forward still forwarded the chord (loop risk)!"; exit 1
 fi
 echo "    focused after : $(jq -r .focused "$model"), tab: $(jq -r .active_tab "$model")"
-echo "    (state file written by the edge-cross, so preferred coord persists)"
-echo "    state file    : $(cat "$state_dir/w_t1.json" 2>/dev/null || echo '(none)' 2>/dev/null)"
-# Note: on the cross-tab path, no state file is written (we switch tabs, not panes
-# within a tab) — that's expected; the new tab's own state applies once there.
+echo "    (edge-cross writes the DESTINATION tab's state, so the preferred coord persists)"
+show_states; echo
+# Note: the edge-cross now lands on the destination's edge column and writes
+# that tab's state (preferred_x/preferred_y), mirroring an in-tab move.
 
 echo
 echo "=== Cleanup ==="

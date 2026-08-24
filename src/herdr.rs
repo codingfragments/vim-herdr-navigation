@@ -49,6 +49,26 @@ pub fn layout(herdr: &str, pane: &str) -> Option<Value> {
     serde_json::from_str(&stdout).ok()
 }
 
+/// `herdr pane layout --current` (the active tab) → parsed JSON, or None on
+/// failure / empty. Used by the cross-tab path to read the *destination* tab's
+/// geometry after `tab.focus` has made it active (the source pane lives in the
+/// old tab, so `layout(--pane <source>)` would still report the old tab).
+pub fn layout_current(herdr: &str) -> Option<Value> {
+    let out = Command::new(herdr)
+        .args(["pane", "layout", "--current"])
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if stdout.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str(&stdout).ok()
+}
+
 /// Run a herdr subcommand inheriting stdio and return its exit status.
 /// Used for fire-and-forget calls inside the walk fallback.
 fn run_inherit(herdr: &str, args: &[&str]) -> bool {
