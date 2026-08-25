@@ -47,8 +47,9 @@ command = ["./target/release/navigate", "right"]
 
 # --- Cross-tab action set: switch tabs at the horizontal edge -----------
 # Bind these to a second chord (e.g. Alt+h/j/k/l) in config.toml. Passing
-# --cross-tabs enables cross-tab navigation at the left/right edge for this
-# invocation only, independent of HERDR_NAV_CROSS_TABS. Up/down are unchanged.
+# --cross-tabs (= --cross tabs) enables cross-tab navigation at the left/right
+# edge for this invocation only, independent of HERDR_NAV_CROSS_TABS. Up/down
+# are unchanged (no vertical crossing).
 
 [[actions]]
 id = "left-cross"
@@ -74,33 +75,65 @@ title = "Navigate right, cross tabs at edge (Vim/herdr)"
 contexts = ["global"]
 command = ["./target/release/navigate", "--cross-tabs", "right"]
 
+# --- Cross-both action set: full 2D torus (tabs horizontally, workspaces ----
+# vertically). Bind these to a chord (e.g. Ctrl+h/j/k/l) in config.toml for
+# the complete cross-surface experience: left/right cross tabs at the edge,
+# up/down cross workspaces at the edge, both with wraparound. Passing --cross
+# both enables it for this invocation only, independent of HERDR_NAV_CROSS.
+
+[[actions]]
+id = "left-cross-both"
+title = "Navigate left, cross tabs+workspaces at edge (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross", "both", "left"]
+
+[[actions]]
+id = "down-cross-both"
+title = "Navigate down, cross workspaces at edge (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross", "both", "down"]
+
+[[actions]]
+id = "up-cross-both"
+title = "Navigate up, cross workspaces at edge (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross", "both", "up"]
+
+[[actions]]
+id = "right-cross-both"
+title = "Navigate right, cross tabs+workspaces at edge (Vim/herdr)"
+contexts = ["global"]
+command = ["./target/release/navigate", "--cross", "both", "right"]
+
 # --- Edge-cross action set: invoked by the editor side (nvim.lua / vim.vim)
 # when a Vim split hits an edge and wants to cross into herdr. `--no-forward`
 # makes navigate skip Vim detection (it would otherwise forward the chord back
 # into Vim and loop) and go straight to the herdr pane-focus path — so smart
-# focus, cross-tab, and preferred-coordinate persist all run, matching the
-# non-Vim path. Not bound to keys; invoked via `herdr plugin action invoke`.
+# focus, cross-tab, cross-workspace, and preferred-coordinate persist all run,
+# matching the non-Vim path. `--cross both` so a Vim split can cross out on
+# BOTH axes (left/right into the next tab, up/down into the next workspace).
+# Not bound to keys; invoked via `herdr plugin action invoke`.
 
 [[actions]]
 id = "left-edge"
 title = "Cross from Vim edge left into herdr"
 contexts = ["global"]
-command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "left"]
+command = ["./target/release/navigate", "--no-forward", "--cross", "both", "left"]
 
 [[actions]]
 id = "down-edge"
 title = "Cross from Vim edge down into herdr"
 contexts = ["global"]
-command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "down"]
+command = ["./target/release/navigate", "--no-forward", "--cross", "both", "down"]
 
 [[actions]]
 id = "up-edge"
 title = "Cross from Vim edge up into herdr"
 contexts = ["global"]
-command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "up"]
+command = ["./target/release/navigate", "--no-forward", "--cross", "both", "up"]
 
 [[actions]]
 id = "right-edge"
 title = "Cross from Vim edge right into herdr"
 contexts = ["global"]
-command = ["./target/release/navigate", "--no-forward", "--cross-tabs", "right"]
+command = ["./target/release/navigate", "--no-forward", "--cross", "both", "right"]
