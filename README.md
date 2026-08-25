@@ -134,58 +134,79 @@ or, simply copy and pasta.
 
   Unlike Vim, these apps don't cross _out_ at an edge — use `prefix+h/j/k/l` to
   leave the pane.
-- **Cross-tab at the horizontal edge.** By default, moving `left`/`right` when
-  you're already at the leftmost/rightmost pane of the tab is a no-op. There are
-  two ways to opt in to crossing into the adjacent tab at the edge:
+- **Cross-surface navigation at the edge.** Herdr is a recursive 2D torus:
+  pane grid → tab strip (horizontal, wraps) → workspace stack (vertical,
+  wraps). By default, a move that hits an edge is a no-op. You opt in to
+  crossing into the adjacent surface with a **scope** — `off` (default) /
+  `tabs` (cycle tabs horizontally) / `workspaces` (cycle workspaces
+  vertically) / `both` (the full 2D torus). There are three ways to set it:
 
-  - **Second action set (recommended).** This plugin ships a second set of
-    actions (`left-cross`/`down-cross`/`up-cross`/`right-cross`) that pass
-    `--cross-tabs` to the binary. Bind them to a second chord (e.g.
-    `Alt+h/j/k/l`) in `config.toml` so both behaviors coexist on separate keys:
+  - **Action set (recommended).** This plugin ships three opt-in action sets,
+    each bound to its own chord so the behaviors coexist on separate keys:
+
+    | Action set | Flag | Crosses |
+    |---|---|---|
+    | `*-cross` | `--cross-tabs` | tabs horizontally (left/right) |
+    | `*-cross-both` | `--cross both` | tabs horizontally + workspaces vertically |
+    | `*-edge` | `--no-forward --cross both` | (Vim edge-cross; both axes) |
+
+    Bind `*-cross-both` to your main chord (e.g. `Ctrl+h/j/k/l`) for the full
+    torus, or `*-cross` if you only want horizontal tab cycling:
 
     ```toml
     [[keys.command]]
-    key = "alt+h"
+    key = ["ctrl+left", "ctrl+h"]
     type = "plugin_action"
-    command = "vim-herdr-navigation.left-cross"
+    command = "vim-herdr-navigation.left-cross-both"
 
     [[keys.command]]
-    key = "alt+j"
+    key = ["ctrl+down", "ctrl+j"]
     type = "plugin_action"
-    command = "vim-herdr-navigation.down-cross"
+    command = "vim-herdr-navigation.down-cross-both"
 
     [[keys.command]]
-    key = "alt+k"
+    key = ["ctrl+up", "ctrl+k"]
     type = "plugin_action"
-    command = "vim-herdr-navigation.up-cross"
+    command = "vim-herdr-navigation.up-cross-both"
 
     [[keys.command]]
-    key = "alt+l"
+    key = ["ctrl+right", "ctrl+l"]
     type = "plugin_action"
-    command = "vim-herdr-navigation.right-cross"
+    command = "vim-herdr-navigation.right-cross-both"
     ```
 
-    Now `Ctrl+h/j/k/l` stays within the tab (no-op at the edge), and
-    `Alt+h/j/k/l` crosses to the adjacent tab when you hit the left/right edge.
-    Up/down are unaffected on either set.
-  - **Global env var.** `export HERDR_NAV_CROSS_TABS=1` makes _every_ navigation
-    cross tabs at the edge (so `Ctrl+h/j/k/l` itself crosses). No second key
-    set; simpler but you lose the same-tab-only behavior.
+  - **`--cross <scope>` flag.** Any action can pass `--cross off|tabs|workspaces|both`
+    (it overrides `HERDR_NAV_CROSS`; `--cross-tabs` is a back-compat alias for
+    `--cross tabs`).
+  - **Global env var.** `export HERDR_NAV_CROSS=both` makes _every_ navigation
+    cross at the edge on both axes (so the default `Ctrl+h/j/k/l` actions
+    cross). `HERDR_NAV_CROSS_TABS=1` is a back-compat alias for `tabs`. No
+    second key set; simpler but you lose the same-tab-only behavior.
 
-  In both cases: `right` at the right edge -> next tab, `left` at the left edge
-  -> previous tab (ordered by the tab's position in the bar); the tab index
-  **wraps** — `right` on the last tab cycles to the first, `left` on the first
-  cycles to the last — so the tabs behave like one continuous horizontal strip.
-  On arrival the destination tab's **edge column** is selected (leftmost column
-  for a `right` move, rightmost for a `left` move) at the row nearest the
-  destination tab's stored `preferred_y` (seeded from the row you left), and
-  that pane is focused; the destination tab's preferred coordinates are then
-  persisted, just like an in-tab move. Up/down never cross tabs. The
-  `--cross-tabs` flag takes precedence over the env var.
+  How crossings land:
+  - **Tabs (left/right):** `right` at the right edge -> next tab, `left` at
+    the left edge -> previous tab (ordered by tab bar position); the index
+    **wraps** (last -> first, first -> last). On arrival the destination tab's
+    **edge column** is selected (leftmost for `right`, rightmost for `left`) at
+    the row nearest its stored `preferred_y` (seeded from the row you left),
+    and that pane is focused; the destination tab's preferred coordinates are
+    then persisted, just like an in-tab move.
+  - **Workspaces (up/down):** `down` at the bottom edge -> next workspace,
+    `up` at the top edge -> previous workspace (ordered by sidebar position);
+    the index **wraps**. The destination workspace's **active tab** is used
+    (workspaces have differing tab layouts, so tab N isn't preserved), and
+    within it the **edge row** is selected (topmost for `down`, bottommost for
+    `up`) at the column nearest its stored `preferred_x` (seeded from the
+    column you left); that pane is focused and the destination tab's preferred
+    coordinates are persisted.
 
-  (The Vim edge-cross now goes through `navigate` too — see the `*-edge`
-  actions in `herdr-plugin.toml` and the editor side. It uses `--no-forward` so
-  `navigate` doesn't re-forward the chord into Vim and loop.)
+  `--cross workspaces` crosses only on vertical moves (left/right stay
+  no-ops at the edge); `--cross both` crosses on both axes. The Vim edge-cross
+  (the `*-edge` actions, invoked by `editor/nvim.lua` / `editor/vim.vim`)
+  uses `--no-forward --cross both` so a Vim split can cross out on BOTH axes —
+  left/right into the next tab, up/down into the next workspace — and gets the
+  same smart-focus + edge-landing + persistence as the non-Vim path. `--no-forward`
+  skips Vim detection so `navigate` doesn't re-forward the chord into Vim and loop.
 - **`Ctrl+l` / `Ctrl+k` in shells.** Binding these globally shadows readline's
   `Ctrl+L` (clear screen) and `Ctrl+K` (kill line) inside non-Vim panes. This is
   the same tradeoff as `vim-tmux-navigator`. If you want them back, bind clear to

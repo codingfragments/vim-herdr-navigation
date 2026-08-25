@@ -104,3 +104,15 @@ pub fn focus_tab(sock_path: &Path, tab_id: &str) -> bool {
 pub fn session_snapshot(sock_path: &Path) -> Option<Value> {
     call(sock_path, "session.snapshot", json!({}))
 }
+
+/// `workspace.focus { workspace_id }` over the socket. Success = `result`
+/// present and `error` absent. Used by the cross-workspace path to switch the
+/// vertical surface after reading the destination's geometry from the
+/// snapshot.
+pub fn workspace_focus(sock_path: &Path, workspace_id: &str) -> bool {
+    let resp = match call(sock_path, "workspace.focus", json!({ "workspace_id": workspace_id })) {
+        Some(r) => r,
+        None => return false,
+    };
+    resp.get("result").is_some() && resp.get("error").is_none()
+}
