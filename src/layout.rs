@@ -69,3 +69,35 @@ pub fn find_snapshot_layout(snapshot: &Value, tab_id: &str) -> Option<Layout> {
         .find(|l| l.get("tab_id").and_then(|t| t.as_str()) == Some(tab_id))
         .and_then(|l| serde_json::from_value(l.clone()).ok())
 }
+
+/// A workspace record extracted from a `session.snapshot` — just the fields
+/// the cross-workspace path needs.
+#[derive(Debug, Clone)]
+pub struct WorkspaceInfo {
+    pub workspace_id: String,
+    pub active_tab_id: String,
+    pub number: u64,
+}
+
+/// From a `session.snapshot` response, return the session's workspaces ordered
+/// by `number` (sidebar order). Returns None if the snapshot is malformed. Used
+/// by the cross-workspace path to cycle the vertical surface race-free.
+pub fn snapshot_workspaces(snapshot: &Value) -> Option<Vec<WorkspaceInfo>> {
+    let arr = snapshot
+        .get("result")?
+        .get("snapshot")?
+        .get("workspaces")?
+        .as_array()?;
+    let mut ws: Vec<WorkspaceInfo> = arr
+        .iter()
+        .filter_map(|w| {
+            Some(WorkspaceInfo {
+                workspace_id: w.get("workspace_id")?.as_str()?.to_string(),
+                active_tab_id: w.get("active_tab_id")?.as_str()?.to_string(),
+                number: w.get("number")?.as_u64()?,
+            })
+        })
+        .collect();
+    ws.sort_by_key(|w| w.number);
+    Some(ws)
+}

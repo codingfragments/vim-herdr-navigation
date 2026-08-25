@@ -103,6 +103,56 @@ pub fn select_edge_column(
     Some((target.pane_id.clone(), tcx, tcy, pref_val))
 }
 
+/// Select the edge-row pane of `layout` for a cross-workspace arrival in `dir`.
+/// `Down` lands on the topmost row (min `y`); `Up` lands on the bottommost row
+/// (max `y + height`). Within that row the pane whose center-x is nearest the
+/// preferred x is chosen — stored value if any, else `seed_cx` — so the column
+/// you were on survives the workspace crossing. Horizontal directions never
+/// cross workspaces and return None. Returns `(pane_id, cx, cy, pref_val)` or
+/// None if the layout has no panes / no edge row / a non-vertical direction.
+pub fn select_edge_row(
+    layout: &Layout,
+    dir: Direction,
+    state_file: &Path,
+    seed_cx: f64,
+) -> Option<(String, f64, f64, f64)> {
+    if layout.panes.is_empty() {
+        return None;
+    }
+    // Edge row: Down -> topmost (min y); Up -> bottommost (max y+height).
+    let edge_panes: Vec<&Pane> = match dir {
+        Direction::Down => {
+            let min_y = layout.panes.iter().map(|p| p.rect.y).min()?;
+            layout.panes.iter().filter(|p| p.rect.y == min_y).collect()
+        }
+        Direction::Up => {
+            let max_yh = layout
+                .panes
+                .iter()
+                .map(|p| p.rect.y + p.rect.height)
+                .max()?;
+            layout
+                .panes
+                .iter()
+                .filter(|p| p.rect.y + p.rect.height == max_yh)
+                .collect()
+        }
+        _ => return None, // horizontal never crosses workspaces
+    };
+    if edge_panes.is_empty() {
+        return None;
+    }
+    let pref_val = crate::state::read_pref(state_file, "preferred_x").unwrap_or(seed_cx);
+    let target = edge_panes.iter().min_by(|a, b| {
+        let da = (a.rect.x as f64 + a.rect.width as f64 / 2.0 - pref_val).powi(2);
+        let db = (b.rect.x as f64 + b.rect.width as f64 / 2.0 - pref_val).powi(2);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    let tcx = target.rect.x as f64 + target.rect.width as f64 / 2.0;
+    let tcy = target.rect.y as f64 + target.rect.height as f64 / 2.0;
+    Some((target.pane_id.clone(), tcx, tcy, pref_val))
+}
+
 /// Select the target pane. Returns `(target_pane_id, target_cx, target_cy, pref_val)`
 /// where `pref_val` is the resolved preferred coordinate (stored value if any,
 /// else the source-pane seed). Returns None if there are no candidates.
@@ -286,5 +336,70 @@ mod tests {
     fn edge_column_empty_layout_returns_none() {
         let l = layout(&[], "A");
         assert!(select_edge_column(&l, Direction::Right, Path::new("/x"), 25.0).is_none());
+    }
+
+    // --- cross-workspace edge-row selection (select_edge_row) ---------------
+    // Vertical mirror of select_edge_column. ABC layout:
+    //   A (left, full height) | B (top-right) | C (bottom-right)
+    //   A: x=0,  y=0,  w=100, h=50  -> cx=50,  cy=25
+    //   B: x=100,y=0,  w=100, h=25  -> cx=150, cy=12.5
+    //   C: x=100,y=25, w=100, h=25  -> cx=150, cy=37.5
+
+    #[test]
+    fn edge_row_down_lands_on_topmost() {
+        // Down into tab 1 -> topmost row = {A, B} (y=0). seed_cx = 50 (A's
+        // column) -> nearest is A (cx=50) over B (cx=150).
+        let l = layout(ABC, "C");
+        let (target, _, _, _) =
+            select_edge_row(&l, Direction::Down, Path::new("/nonexistent.json"), 50.0).unwrap();
+        assert_eq!(target, "A");
+    }
+
+    #[test]
+    fn edge_row_up_lands_on_bottommost_nearest_col() {
+        // Up into tab 1 -> bottommost row = {A, C} (A spans full height, so
+        // y+h=50; C ends at y+h=50). seed_cx = 150 (right column) -> nearest
+        // is C (cx=150) over A (cx=50).
+        let l = layout(ABC, "B");
+        let (target, _, _, pref) =
+            select_edge_row(&l, Direction::Up, Path::new("/nonexistent.json"), 150.0).unwrap();
+        assert_eq!(target, "C");
+        assert_eq!(pref, 150.0);
+    }
+
+    #[test]
+    fn edge_row_up_uses_stored_preferred_x() {
+        // Stored preferred_x = 50 (A's column) -> Up lands on A.
+        let l = layout(ABC, "B");
+        let tmp = std::env::temp_dir().join("vhnav_edge_row_state.json");
+        std::fs::write(&tmp, r#"{"preferred_x":50}"#).unwrap();
+        let (target, _, _, _) =
+            select_edge_row(&l, Direction::Up, &tmp, 150.0).unwrap();
+        assert_eq!(target, "A");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn edge_row_single_pane_lands_on_it() {
+        let l = layout(D_ONLY, "D");
+        let (t_down, _, _, _) =
+            select_edge_row(&l, Direction::Down, Path::new("/x"), 25.0).unwrap();
+        let (t_up, _, _, _) =
+            select_edge_row(&l, Direction::Up, Path::new("/x"), 25.0).unwrap();
+        assert_eq!(t_down, "D");
+        assert_eq!(t_up, "D");
+    }
+
+    #[test]
+    fn edge_row_horizontal_returns_none() {
+        let l = layout(ABC, "A");
+        assert!(select_edge_row(&l, Direction::Left, Path::new("/x"), 25.0).is_none());
+        assert!(select_edge_row(&l, Direction::Right, Path::new("/x"), 25.0).is_none());
+    }
+
+    #[test]
+    fn edge_row_empty_layout_returns_none() {
+        let l = layout(&[], "A");
+        assert!(select_edge_row(&l, Direction::Down, Path::new("/x"), 25.0).is_none());
     }
 }

@@ -27,6 +27,7 @@ use std::path::Path;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::cross::wrapped_neighbor;
 use crate::direction::{Axis, Direction};
 use crate::socket;
 
@@ -94,21 +95,6 @@ fn tabs_for_workspace(
         .collect();
     tabs.sort_by_key(|t| t.number.unwrap_or(0));
     Some(tabs)
-}
-
-/// Compute the wrapped neighbor index for a horizontal cross-tab move.
-/// `Right` -> next (last wraps to 0); `Left` -> prev (0 wraps to last).
-/// Returns None if there are fewer than 2 tabs, `cur_idx` is out of range,
-/// or `dir` isn't horizontal.
-fn wrapped_neighbor(len: usize, cur_idx: usize, dir: Direction) -> Option<usize> {
-    if len < 2 || cur_idx >= len {
-        return None;
-    }
-    match dir {
-        Direction::Right => Some((cur_idx + 1) % len),
-        Direction::Left => Some((cur_idx + len - 1) % len),
-        _ => None,
-    }
 }
 
 /// Cross the tab boundary in `dir` (horizontal only) with wraparound, then
@@ -254,49 +240,5 @@ mod tests {
         assert_eq!(tabs[1].focused, None);
     }
 
-    // --- wrapped_neighbor (cycling) ----------------------------------------
-
-    #[test]
-    fn wrapped_right_advances_and_wraps() {
-        assert_eq!(wrapped_neighbor(3, 0, Direction::Right), Some(1));
-        assert_eq!(wrapped_neighbor(3, 1, Direction::Right), Some(2));
-        // last -> first (wrap)
-        assert_eq!(wrapped_neighbor(3, 2, Direction::Right), Some(0));
-    }
-
-    #[test]
-    fn wrapped_left_advances_and_wraps() {
-        assert_eq!(wrapped_neighbor(3, 2, Direction::Left), Some(1));
-        assert_eq!(wrapped_neighbor(3, 1, Direction::Left), Some(0));
-        // first -> last (wrap)
-        assert_eq!(wrapped_neighbor(3, 0, Direction::Left), Some(2));
-    }
-
-    #[test]
-    fn wrapped_two_tabs_cycle() {
-        // With 2 tabs, right and left both hop to the only other tab.
-        assert_eq!(wrapped_neighbor(2, 0, Direction::Right), Some(1));
-        assert_eq!(wrapped_neighbor(2, 1, Direction::Right), Some(0));
-        assert_eq!(wrapped_neighbor(2, 1, Direction::Left), Some(0));
-        assert_eq!(wrapped_neighbor(2, 0, Direction::Left), Some(1));
-    }
-
-    #[test]
-    fn wrapped_single_tab_is_none() {
-        assert_eq!(wrapped_neighbor(1, 0, Direction::Right), None);
-        assert_eq!(wrapped_neighbor(1, 0, Direction::Left), None);
-        assert_eq!(wrapped_neighbor(0, 0, Direction::Right), None);
-    }
-
-    #[test]
-    fn wrapped_vertical_is_none() {
-        assert_eq!(wrapped_neighbor(3, 1, Direction::Up), None);
-        assert_eq!(wrapped_neighbor(3, 1, Direction::Down), None);
-    }
-
-    #[test]
-    fn wrapped_out_of_range_is_none() {
-        assert_eq!(wrapped_neighbor(3, 3, Direction::Right), None);
-        assert_eq!(wrapped_neighbor(3, 5, Direction::Left), None);
-    }
+    // wrapped_neighbor cycling is tested in src/cross.rs (shared primitive).
 }
