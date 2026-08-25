@@ -1,6 +1,6 @@
 id = "vim-herdr-navigation"
 name = "Vim Herdr Navigation"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.7.0"
 description = "Seamless Ctrl+h/j/k/l navigation across herdr panes and Vim/Neovim splits"
 platforms = ["linux", "macos"]
