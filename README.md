@@ -40,6 +40,33 @@ Two cooperating sides, like `vim-tmux-navigator`:
   `cargo build --release` once after linking)
 - Tested on Linux or macOS
 
+## Running under Rex
+
+The same seamless navigation works under [Rex](https://rex.dev)
+(superlogical's terminal multiplexer) — in **pure Lua**, no binary
+involved:
+
+- `rex/vim_nav.lua` (copy to `~/.config/rex/plugins/vim_nav.lua`, add
+  `require("plugins.vim_nav")` to `init.lua`) binds `ctrl+h/j/k/l` and
+  the ctrl+arrows. The action reads the focused pane's foreground
+  process:
+  - **Neovim** is *asked* over RPC (`--remote-expr` on a socket named
+    after the pane's block, with a 250 ms timeout) whether the key
+    moves a split — so the nvim side never sees the chord unless it
+    needs to, and crossings keep the app context.
+  - **vim, ssh, nested nvim, passthrough apps** get the key forwarded.
+  - Otherwise the focus moves between Rex panes with the same smart
+    focus and per-tab preferred coordinate as under herdr, and at the
+    layout edge crosses into the next/previous **tab** (left/right) or
+    **session** (up/down), wrapping.
+- `editor/nvim.lua` (the Neovim side) adds the Rex branch: under Rex it
+  starts the socket per block and, for the rare forwarded-key cases,
+  maps `<C-h/j/k/l>` itself and hands an edge back to Rex.
+
+Limits under Rex: from a CLI context (nvim's own edge fallback) a
+crossing moves within the tab only; session crossings need the app's
+context. Full plan: [`rex-migration.md`](rex-migration.md).
+
 ## Install
 
 ```bash
