@@ -1,6 +1,6 @@
 [package]
 name = "vim-herdr-navigation"
-version = "0.2.0"
+version = "0.4.0"
 edition = "2021"
 description = "Seamless Ctrl+h/j/k/l navigation across herdr panes and Vim/Neovim splits"
 license = "MIT"
