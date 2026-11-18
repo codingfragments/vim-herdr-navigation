@@ -1,6 +1,8 @@
 # Rex migration plan: pure-Lua `Ctrl+h/j/k/l` across nvim splits and Rex panes
 
-> **Status: planned, not started.** This is the active plan for this repo.
+> **Status: Phases 0–3 done (repo PR pending); live in the user's
+> config; crossings' app half needs the user's hands (server half
+> verified).** This is the active plan for this repo.
 > Agents: read this file before starting work, follow the phases in order
 > (one `phase/rex-N-…` branch and PR per phase, see AGENTS.md), and tick the
 > checkboxes and update the "Status" lines as phases land.
@@ -133,35 +135,40 @@ results below and folded into the Design section)
 
 ### Phase 1: nvim side, in `phase/rex-1-nvim`
 
-Status: ☐ not started
+Status: ☑ done (2026-11-18, branch `phase/rex-1-nvim`)
 
-- [ ] `editor/nvim.lua`: keep the herdr and tmux branches byte-identical.
-  When `vim.env.REX_BLOCK` is set:
-  - Start the socket (S5 path) and remove it in `VimLeavePre`.
-  - Provide a module `rex_nav` (via `package.loaded`, so
-    `v:lua.require'rex_nav'` resolves) with `move(dir)`, which runs
-    `wincmd` and returns `"moved"` or `"edge"`.
-  - `<C-h/j/k/l>` mappings in `{ "n", "i" }` (the user's variant becomes
-    the default) for the forwarding fallback. At an edge they call
-    `REX_CLI do vim_nav direction=<dir> no_forward=true`.
-- [ ] `editor/vim.vim`: a Rex branch for the D5 fallback only.
-- [ ] Update the user's `~/.config/nvim/lua/scripts/herder_nav.lua`, in
-  the dotfiles repo as its own PR: either `dofile` this repo's
-  `editor/nvim.lua`, or copy it. The decision follows D1.
+- [x] `editor/nvim.lua`: herdr/tmux branches preserved behaviorally;
+  the shared `move_split` is geometry + `nvim_set_current_win` (spike
+  S5: `wincmd` over RPC gets overridden — one implementation serves the
+  keymaps and the RPC). Rex branch: socket `/tmp/rex-nvim/<REX_BLOCK>`
+  (700 via `vim.uv.fs_mkdir` — **`vim.fn.mkdir`'s mode mangles bits**),
+  stale-socket recovery (remove + retry; a nested nvim takes the path
+  over), `VimLeavePre` cleanup, `package.loaded["rex_nav"]` for
+  `v:lua.require'rex_nav'.move(…)`, `<C-h/j/k/l>` maps in `{n, i}` that
+  at an edge call `$REX_BIN_DIR/rex do vim_nav … no_forward=1`.
+- [x] `editor/vim.vim`: Rex branch (the same `rex do` handoff).
+- [x] The user's `herder_nav.lua` (dotfiles) is a copy of
+  `editor/nvim.lua`; her `keymaps.lua` guard now loads it under Rex too
+  (it was herdr-only before — REX_BLOCK check added).
 
 ### Phase 2: Rex side, in `phase/rex-2-rex-lua`
 
-Status: ☐ not started
+Status: ☑ done (2026-11-18, branch `phase/rex-1-nvim`, same PR) —
+verified live end to end in a scratch session
 
-- [ ] `rex/vim_nav.lua`, self-contained apart from optional `lib.env`
+- [x] `rex/vim_nav.lua`, self-contained apart from optional `lib.env`
   (login PATH, `rex_cli`). The action is
   `vim_nav{ direction, cross = "string?", no_forward = "boolean?" }`:
   1. Find the focused block (`rex.session.view` → `active_window_id` →
      `focused_block_id`). If it's zoomed, do a plain move or nothing.
-  2. Unless `no_forward` is set, read the foreground process. If it's
-     nvim, its PID's socket exists and the RPC answers `"moved"`, stop.
-     If it's vim, a passthrough app, `ssh`, or an RPC timeout, forward
-     the key (S2) and stop.
+  2. Unless `no_forward` is set, read the foreground process
+     (`rex.call`, ~0 ms). nvim → RPC (`timeout 0.25 nvim --clean
+     --server /tmp/rex-nvim/<block>.sock --remote-expr …`): `"moved"`
+     stops, `"edge"` falls through, anything else (blocked, no socket,
+     remote host) forwards the key. vim / ssh / a *nested* vim
+     (`terminal.process`'s `child` mirrors the foreground — nested is
+     detected by pid) / a passthrough app → forward (`rex send-key`,
+     ~30 ms).
   3. Smart focus: among the tiled-layer blocks of the active window, pick
      the candidates beyond the current rect in that direction, then the
      one whose row (for left/right) or column (for up/down) is nearest
@@ -174,10 +181,10 @@ Status: ☐ not started
      `rex.client.queue` is used only when `ctx.client_id` is an app
      client; otherwise use the server-side fallback, as in today's
      `focus_pane`.
-- [ ] Passthrough list: a Lua pattern list on the process name (no regex
-  in gopher-lua), default empty, replacing `HERDR_NAV_PASSTHROUGH_RE`.
-- [ ] Bindings, inside the file and easy to change: `ctrl+h/j/k/l` and
-  `ctrl+left/down/up/right` go to `vim_nav` with `cross = "both"` (D2).
+- [x] Passthrough list: a Lua pattern list on the process name, default
+  empty; ssh and classic vim are always forwarded.
+- [x] Bindings: `ctrl+h/j/k/l` and `ctrl+left/down/up/right` →
+  `vim_nav` with the default `cross = "both"` (D2).
 - [ ] Unit-testable core: the geometry and crossing choice are pure Lua
   functions over a `session.view` table. Test them with recorded view
   fixtures (`test/rex/*.json`), run through `rex do` in a selftest
@@ -185,17 +192,15 @@ Status: ☐ not started
 
 ### Phase 3: wire it into the user's Rex config, in the dotfiles repo (separate PR there)
 
-Status: ☐ not started
+Status: ☑ done (2026-11-18, dotfiles branch, live as config generation 13+)
 
-- [ ] `~/.config/rex/plugins/vim_nav.lua`: a copy or symlink of
-  `rex/vim_nav.lua` (D1); add it to `init.lua`'s plugin list.
-- [ ] Remove the `ctrl+h/j/k/l` and `ctrl+arrow` bindings from
-  `conf/focus.lua`. The `ctrl+s>h/j/k/l` prefix bindings may stay on
-  `focus_pane` or move to `vim_nav` with `cross = "off"`. Retire
-  `lib/focus.lua` once nothing uses it.
-- [ ] `~/.config/rex/migration-plan.md`: move "vim-herdr-navigation
-  (full torus)" and "Full 2D torus" from "impossible" to "done", noting
-  any limits found in the spikes.
+- [x] `~/.config/rex/plugins/vim_nav.lua`: a copy of `rex/vim_nav.lua`
+  (D1); added to `init.lua`'s plugin list.
+- [x] The global `ctrl+h/j/k/l` and `ctrl+arrow` bindings removed from
+  `conf/focus.lua` (now on vim_nav); the `ctrl+s>h/j/k/l` prefix chords
+  stay on `focus_pane`.
+- [x] `~/.config/rex/migration-plan.md`: the full torus and
+  vim-herdr-navigation entries updated (impossible → done).
 - [ ] Note the D3 `ctrl+k` decision in `../herdr-nav/rex-migration.md`
   (a docs PR in that repo).
 
