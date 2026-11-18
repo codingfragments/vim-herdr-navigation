@@ -1,8 +1,7 @@
 # Rex migration plan: pure-Lua `Ctrl+h/j/k/l` across nvim splits and Rex panes
 
-> **Status: Phases 0–3 done (repo PR pending); live in the user's
-> config; crossings' app half needs the user's hands (server half
-> verified).** This is the active plan for this repo.
+> **Status: complete — v0.4.0 released, live under herdr and Rex
+> (2026-11-18).** This plan stays as the record for the sister ports.
 > Agents: read this file before starting work, follow the phases in order
 > (one `phase/rex-N-…` branch and PR per phase, see AGENTS.md), and tick the
 > checkboxes and update the "Status" lines as phases land.
@@ -206,7 +205,11 @@ Status: ☑ done (2026-11-18, dotfiles branch, live as config generation 13+)
 
 ### Phase 4: docs and release `v0.4.0`, in `phase/rex-4-docs` then `release/0.4.0`
 
-Status: ☐ not started
+Status: ☑ done (2026-11-18): README "Running under Rex" (#11),
+  release PR #12 (`herdr-plugin.toml` + `Cargo.toml` — the latter
+  re-synced from a skipped 0.3.0 bump — plus a stray-file cleanup #13),
+  tag `v0.4.0`, GitHub release published. **The Rex migration is
+  complete.**
 
 - [ ] README: a "Rex" section (how it works, install for both files,
   cross scopes, limits: classic Vim and ssh-nvim can't cross out, state
