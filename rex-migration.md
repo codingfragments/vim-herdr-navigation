@@ -49,9 +49,11 @@ ctrl+h ──► Rex Lua action `vim_nav{direction}`   (started by the app, so c
             ├─ foreground of the focused block (terminal.process)
             │
             ├─ nvim with a rex_nav socket?
-            │     nvim --clean --server <sock> --remote-expr "v:lua.require'rex_nav'.move('h')"
-            │        "moved" ─► done
+            │     timeout 0.25 nvim --clean --server <sock> \
+            │       --remote-expr "v:lua.rex_nav.move('left')"
+            │        "moved" ─► done          (move = geometry + nvim_set_current_win)
             │        "edge"  ─► fall through to the pane move (same action, app context)
+            │        timeout ─► forward the key (rex send-key; blocked nvim = hit-enter etc.)
             │
             ├─ vim / passthrough app / ssh / nvim without a socket?
             │     forward the key (block.event or `rex send-key`); the app handles it
@@ -65,12 +67,16 @@ ctrl+h ──► Rex Lua action `vim_nav{direction}`   (started by the app, so c
 - **The answer comes back to Lua, so there is no callback, no loop and no
   `--no-forward`.** Crossing works, because the decision is made inside
   the action the app started.
-- **Speed:** `nvim --clean --server S --remote-expr 'winnr()'` took
-  10–20 ms on the user's Mac (nvim 0.12.6, 2026-11).
-- **Finding the right nvim:** the socket is named after nvim's PID, and
-  the Rex side takes the PID from `terminal.process`'s foreground
-  process. A nested nvim (`:terminal`, `:!nvim`) therefore gets its own
-  socket.
+- **Speed:** `nvim --clean --server S --remote-expr …` takes ~10 ms on
+  the user's Mac (nvim 0.12.6). The action prologue (view + process via
+  `rex.call`) is sub-millisecond; forwarding via CLI `rex send-key`
+  ~30 ms.
+- **Finding the right nvim:** the socket is named after **`REX_BLOCK`**
+  (nvim inherits it in its environment). Neovim 0.12's TUI frontend and
+  `--embed` backend have different PIDs, so a pid-named socket cannot be
+  found from Rex's `process` info. Nested nvim (`:terminal`) inherits the
+  same `REX_BLOCK` — Phase 2 disambiguates (e.g. a block+pid suffix with
+  prefix matching, innermost wins).
 - **Geometry:** `session.view` already gives every layout node a
   normalized `rect = [x, y, w, h]`. Checked live:
   `windows[].layers[].layout.split.{before,after}.rect`, with layers of
@@ -91,10 +97,8 @@ ctrl+h ──► Rex Lua action `vim_nav{direction}`   (started by the app, so c
 
 ### Phase 0: spikes, in `phase/rex-0-spikes`
 
-Status: ☐ not started
-
-Throwaway Lua in the user's Rex config plus a scratch nvim. Write the
-results into the spike table below before Phase 1.
+Status: ☑ done (2026-11-18, throwaway probes in a scratch Rex session;
+results below and folded into the Design section)
 
 - [ ] **S1 Blocked nvim:** `--remote-expr` while nvim shows a hit-enter
   prompt, an operator-pending state, an open cmdline, or is busy. Does it
@@ -210,12 +214,12 @@ Status: ☐ not started
 
 | # | Question | Result |
 |---|---|---|
-| S1 | Blocked nvim and `--remote-expr`: does it hang, and what timeout mechanism works? | ☐ |
-| S2 | Can config Lua send keys into a block directly? `<C-h>` distinct from BS? | ☐ |
-| S3 | Landing on the edge pane after crossing to the next tab or session from config Lua | ☐ |
-| S4 | Delay per keypress (process, RPC, view) and whether `terminal.process` is reachable from config Lua | ☐ |
-| S5 | nvim socket named after its PID; `move()` from RPC in insert and terminal mode; `--clean` client | ☐ |
-| S6 | `REX_CLI` reachable inside nvim for the fallback | ☐ |
+| S1 | Blocked nvim and `--remote-expr`: does it hang, and what timeout mechanism works? | ☑ Hangs at a hit-enter prompt and in `getchar`-style input waits. `:sleep 10` does NOT block (nvim 0.12 handles concurrent RPC). Every RPC needs a timeout (GNU `timeout` is on the login PATH, `/opt/homebrew/bin/timeout`); on timeout, forward the key — block-level `rex send-key enter`/`ctrl+h` dismisses hit-enter. |
+| S2 | Can config Lua send keys into a block directly? `<C-h>` distinct from BS? | ☑ `rex.call("block.event", …)` works from config Lua, sub-ms, and bypasses Lua bindings (no loop) — but its ctrl-modifier payload did not arrive in nvim as `<C-h>` (shape not pinned down). The CLI `rex send-key ctrl+h` is proven correct: kitty keyboard protocol is active, nvim sees `<C-h>` distinct from `<BS>`. **Forward via the CLI** (~30 ms), not block.event. |
+| S3 | Landing on the edge pane after crossing to the next tab or session from config Lua | ◐ Design follows the proven `lib/focus.lua` pattern (server-side `session.focus_block` on the target, then `rex.client.queue("client.tab.…")` from the app-invoked action). Server half verified; the app half needs the user's hands in Phase 2. |
+| S4 | Delay per keypress (process, RPC, view) and whether `terminal.process` is reachable from config Lua | ☑ All pieces from config Lua: `session.view` ~0 ms, `rex.call("com.superlogical.terminal.process", …)` ~0 ms (returns the foreground pid/name), nvim RPC ~10 ms, CLI `send-key` ~30 ms. Well under 50 ms. |
+| S5 | nvim socket named after its PID; `move()` from RPC in insert and terminal mode; `--clean` client | ☑ with **design changes**: (a) nvim 0.12.6 splits into a TUI frontend + `--embed` **backend** with different PIDs — Rex's `process` pid ≠ nvim's `getpid()` — so the socket is named after **`REX_BLOCK`** (nvim inherits it), not the pid. (b) `wincmd` via RPC gets overridden → `move()` computes the neighbor from window geometry and switches with `nvim_set_current_win` (reliable, persists, works from insert mode). (c) `vim.loop` is gone in 0.12 — use `vim.uv`. (d) `--remote-expr` evaluates **VimL**: use `v:lua.…` (bare `vim.*` fails). `--clean` client loads no user config. |
+| S6 | `REX_CLI` reachable inside nvim for the fallback | ☑ Panes export `REX_BIN_DIR` (the rex CLI's directory), `REX_SERVER`, `REX_SESSION`, `REX_BLOCK`. The nvim-side fallback calls `$REX_BIN_DIR/rex do vim_nav …`. |
 
 ## Rex facts an agent needs (verified 2026-11, rex 0.1.0-preview.19, api rev 14)
 
