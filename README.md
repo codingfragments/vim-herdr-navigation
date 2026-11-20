@@ -67,6 +67,38 @@ Limits under Rex: from a CLI context (nvim's own edge fallback) a
 crossing moves within the tab only; session crossings need the app's
 context. Full plan: [`rex-migration.md`](rex-migration.md).
 
+### What `vim_nav.lua` needs from your Rex config
+
+It has no binary of its own, but it runs two external commands, and the
+Rex server is started by the macOS app with a minimal `PATH`
+(`/usr/bin:/bin:/usr/sbin:/sbin`, no Homebrew, no mise shims):
+
+| Command | Needs | Without it |
+|---|---|---|
+| `rex send-key …` (forwarding a key to vim, ssh and other apps) | the **`rex` CLI's absolute path** | keys are not forwarded |
+| `env PATH=… timeout 0.25 nvim --remote-expr …` (asking nvim whether the key moves a split) | **`nvim` and a `timeout` command** on the login `PATH` | no error, but nvim is never asked: every key is forwarded instead, so the smart handling of nvim splits is silently off |
+
+Stock macOS has no `timeout` (it comes with GNU coreutils, e.g.
+`brew install coreutils`). On a standard macOS install the launcher finds
+the CLI by itself (it falls back to the app bundle under your own
+`$HOME`), but its fallback `PATH` is only `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+so `nvim` or `timeout` installed anywhere else (mise, `~/.local/bin`,
+Nix, …) is **not found until you add a `~/.config/rex/lib/env.lua`**.
+One file serves every Rex launcher:
+
+```sh
+mkdir -p ~/.config/rex/lib
+curl -fsSL https://raw.githubusercontent.com/codingfragments/muxhost/main/examples/rex/lib/env.lua \
+  -o ~/.config/rex/lib/env.lua
+```
+
+That sample finds the CLI and asks your login shell (fish, zsh, bash, …)
+for its `PATH`, with nothing tied to an account or a home directory. To
+pin values by hand instead, to check what it resolves to, or to
+troubleshoot, see the muxhost guide:
+[The Rex environment for launchers](https://github.com/codingfragments/muxhost/blob/main/doc/rex-environment.md).
+Reload your config afterwards (`ctrl+s>shift+r`).
+
 ## Install
 
 ```bash
